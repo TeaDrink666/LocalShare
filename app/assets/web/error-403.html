@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light dark">
+    <title>LocalShare</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            display: grid;
+            min-height: 100vh;
+            margin: 0;
+            padding: 24px;
+            place-items: center;
+            color: #18212c;
+            background: radial-gradient(circle at 20% 10%, #dff8f2, transparent 35rem), #f7f9fc;
+            font-family: "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+        }
+        main {
+            width: min(100%, 480px);
+            padding: 34px;
+            border: 1px solid rgba(113, 123, 133, .2);
+            border-radius: 28px;
+            background: rgba(255, 255, 255, .9);
+            box-shadow: 0 24px 70px rgba(31, 54, 71, .12);
+            text-align: center;
+        }
+        .icon {
+            display: grid;
+            width: 64px;
+            height: 64px;
+            margin: 0 auto 20px;
+            place-items: center;
+            border-radius: 20px;
+            color: #0f766e;
+            background: rgba(15, 118, 110, .11);
+            font-size: 30px;
+        }
+        h1 { margin: 0 0 10px; font-size: 27px; letter-spacing: -.5px; }
+        p { margin: 0; color: #64707d; line-height: 1.6; }
+        @media (prefers-color-scheme: dark) {
+            body { color: #e5e9f0; background: radial-gradient(circle at 20% 10%, rgba(15, 118, 110, .2), transparent 35rem), #0f151c; }
+            main { border-color: rgba(190, 201, 212, .12); background: rgba(23, 30, 39, .94); box-shadow: 0 24px 70px rgba(0, 0, 0, .3); }
+            p { color: #aab3bd; }
+            .icon { color: #73d9cc; background: rgba(115, 217, 204, .1); }
+        }
+    </style>
+</head>
+<body>
+<main>
+    <div class="icon" aria-hidden="true">⌛</div>
+    <h1 id="title">This share has ended</h1>
+    <p id="message">Ask the sender to create a new LocalShare link, then open it again.</p>
+</main>
+<script>
+    if ((navigator.language || '').toLowerCase().indexOf('zh') === 0) {
+        document.getElementById('title').innerText = '此次共享已结束';
+        document.getElementById('message').innerText = '请让发送方重新生成 LocalShare 链接后再试。';
+    }
+</script>
+</body>
+</html>
