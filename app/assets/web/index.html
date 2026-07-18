@@ -1,0 +1,568 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="color-scheme" content="light dark">
+    <meta name="referrer" content="no-referrer">
+    <title>LocalShare</title>
+    <style>
+        :root {
+            color-scheme: light;
+            --primary: #0f766e;
+            --primary-bright: #16a394;
+            --secondary: #5965a8;
+            --text: #18212c;
+            --muted: #64707d;
+            --surface: rgba(255, 255, 255, 0.88);
+            --surface-solid: #ffffff;
+            --border: rgba(113, 123, 133, 0.2);
+            --page-a: #e9faf6;
+            --page-b: #eef1ff;
+            --shadow: 0 24px 70px rgba(31, 54, 71, 0.13);
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        html {
+            min-height: 100%;
+            background: #f5f8fb;
+        }
+
+        body {
+            min-height: 100vh;
+            margin: 0;
+            color: var(--text);
+            font-family: Inter, "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+            background:
+                radial-gradient(circle at 8% 5%, var(--page-a) 0, transparent 34rem),
+                radial-gradient(circle at 92% 10%, var(--page-b) 0, transparent 32rem),
+                #f7f9fc;
+        }
+
+        a {
+            color: inherit;
+            text-decoration: none;
+        }
+
+        .page-shell {
+            width: min(100% - 32px, 980px);
+            margin: 0 auto;
+            padding: max(28px, env(safe-area-inset-top)) 0 max(40px, env(safe-area-inset-bottom));
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin: 0 4px 24px;
+            font-size: 19px;
+            font-weight: 750;
+            letter-spacing: -0.35px;
+        }
+
+        .brand-mark {
+            display: grid;
+            width: 42px;
+            height: 42px;
+            place-items: center;
+            border-radius: 14px;
+            color: white;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            box-shadow: 0 9px 24px rgba(15, 118, 110, 0.23);
+        }
+
+        .brand-mark svg {
+            width: 22px;
+            height: 22px;
+        }
+
+        .share-card {
+            overflow: hidden;
+            border: 1px solid var(--border);
+            border-radius: 30px;
+            background: var(--surface);
+            box-shadow: var(--shadow);
+            backdrop-filter: blur(20px);
+        }
+
+        .hero {
+            position: relative;
+            overflow: hidden;
+            padding: 34px 36px 32px;
+            color: white;
+            background: linear-gradient(125deg, #0f766e 0%, #168f82 48%, #5965a8 100%);
+        }
+
+        .hero::after {
+            position: absolute;
+            top: -82px;
+            right: -52px;
+            width: 230px;
+            height: 230px;
+            border: 1px solid rgba(255, 255, 255, 0.16);
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.06);
+            content: "";
+        }
+
+        .eyebrow {
+            display: inline-flex;
+            position: relative;
+            z-index: 1;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 10px;
+            border: 1px solid rgba(255, 255, 255, 0.18);
+            border-radius: 999px;
+            color: rgba(255, 255, 255, 0.88);
+            background: rgba(255, 255, 255, 0.11);
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #a7f3d0;
+            box-shadow: 0 0 0 5px rgba(167, 243, 208, 0.14);
+        }
+
+        h1 {
+            position: relative;
+            z-index: 1;
+            margin: 21px 0 8px;
+            font-size: clamp(30px, 5vw, 44px);
+            line-height: 1.08;
+            letter-spacing: -1.25px;
+        }
+
+        #status-text {
+            position: relative;
+            z-index: 1;
+            min-height: 24px;
+            margin: 0;
+            color: rgba(255, 255, 255, 0.76);
+            font-size: 16px;
+        }
+
+        .content {
+            padding: 28px;
+        }
+
+        .section-heading {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin: 0 4px 18px;
+        }
+
+        .section-heading h2 {
+            margin: 0;
+            font-size: 18px;
+            letter-spacing: -0.25px;
+        }
+
+        .secure-note {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            color: var(--muted);
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .bulk-download {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            gap: 16px 24px;
+            align-items: center;
+            margin: 0 0 18px;
+            padding: 18px;
+            border: 1px solid rgba(15, 118, 110, 0.2);
+            border-radius: 20px;
+            background: linear-gradient(135deg, rgba(15, 118, 110, 0.09), rgba(89, 101, 168, 0.07));
+        }
+
+        .bulk-download.is-hidden,
+        .bulk-progress.is-hidden {
+            display: none;
+        }
+
+        .bulk-summary {
+            display: grid;
+            grid-template-columns: auto minmax(0, 1fr);
+            gap: 12px;
+            align-items: center;
+            min-width: 0;
+        }
+
+        .bulk-icon {
+            display: grid;
+            width: 44px;
+            height: 44px;
+            place-items: center;
+            border-radius: 15px;
+            color: var(--primary);
+            background: rgba(255, 255, 255, 0.72);
+            box-shadow: inset 0 0 0 1px rgba(15, 118, 110, 0.09);
+        }
+
+        .bulk-icon svg {
+            width: 21px;
+            height: 21px;
+        }
+
+        .bulk-copy {
+            min-width: 0;
+        }
+
+        .bulk-title {
+            margin: 0 0 3px;
+            font-size: 15px;
+            font-weight: 750;
+            letter-spacing: -0.15px;
+        }
+
+        .bulk-meta,
+        .bulk-help {
+            margin: 0;
+            color: var(--muted);
+            font-size: 12px;
+            line-height: 1.45;
+        }
+
+        .download-all-button {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            min-height: 44px;
+            padding: 0 18px;
+            border: 0;
+            border-radius: 14px;
+            color: #ffffff;
+            background: linear-gradient(135deg, var(--primary), #168f82);
+            box-shadow: 0 9px 22px rgba(15, 118, 110, 0.2);
+            cursor: pointer;
+            font: inherit;
+            font-size: 13px;
+            font-weight: 750;
+            transition: transform 160ms ease, box-shadow 160ms ease, opacity 160ms ease;
+        }
+
+        .download-all-button:hover,
+        .download-all-button:focus-visible {
+            outline: none;
+            box-shadow: 0 12px 28px rgba(15, 118, 110, 0.28);
+            transform: translateY(-1px);
+        }
+
+        .download-all-button:focus-visible {
+            box-shadow: 0 0 0 4px rgba(15, 118, 110, 0.18), 0 12px 28px rgba(15, 118, 110, 0.24);
+        }
+
+        .download-all-button:disabled {
+            cursor: wait;
+            opacity: 0.64;
+            transform: none;
+        }
+
+        .download-all-button svg {
+            width: 17px;
+            height: 17px;
+        }
+
+        .bulk-progress {
+            grid-column: 1 / -1;
+        }
+
+        .bulk-progress-copy {
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            gap: 16px;
+            margin-bottom: 8px;
+            color: var(--muted);
+            font-size: 12px;
+        }
+
+        #bulk-progress-status {
+            overflow: hidden;
+            color: var(--text);
+            font-weight: 650;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        #bulk-progress-count {
+            flex: 0 0 auto;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .bulk-progress-track {
+            overflow: hidden;
+            height: 7px;
+            border-radius: 999px;
+            background: rgba(100, 112, 125, 0.16);
+        }
+
+        #bulk-progress-bar {
+            display: block;
+            width: 0;
+            height: 100%;
+            border-radius: inherit;
+            background: linear-gradient(90deg, var(--primary-bright), var(--secondary));
+            transition: width 280ms ease;
+        }
+
+        .bulk-help {
+            grid-column: 1 / -1;
+            padding-top: 1px;
+        }
+
+        .download-frame {
+            position: fixed;
+            width: 1px;
+            height: 1px;
+            border: 0;
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        #file-list,
+        #single-file {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 12px;
+        }
+
+        #single-file {
+            grid-template-columns: minmax(0, 1fr);
+        }
+
+        .file-item {
+            display: grid;
+            grid-template-columns: auto minmax(0, 1fr) auto;
+            align-items: center;
+            min-height: 72px;
+            padding: 12px 14px;
+            border: 1px solid var(--border);
+            border-radius: 18px;
+            background: var(--surface-solid);
+            transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+        }
+
+        .file-item:hover,
+        .file-item:focus-visible {
+            border-color: rgba(15, 118, 110, 0.42);
+            outline: none;
+            box-shadow: 0 12px 30px rgba(15, 118, 110, 0.12);
+            transform: translateY(-2px);
+        }
+
+        .file-index-cell {
+            display: grid;
+            width: 42px;
+            height: 42px;
+            place-items: center;
+            border-radius: 14px;
+            color: var(--primary);
+            background: rgba(15, 118, 110, 0.1);
+            font-size: 13px;
+            font-weight: 750;
+        }
+
+        .file-name-cell {
+            overflow: hidden;
+            padding: 0 12px;
+            font-size: 14px;
+            font-weight: 650;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .file-size-cell {
+            color: var(--muted);
+            font-size: 12px;
+            white-space: nowrap;
+        }
+
+        .footer {
+            margin: 18px 4px 0;
+            color: var(--muted);
+            font-size: 12px;
+            text-align: center;
+        }
+
+        noscript {
+            display: block;
+            margin-bottom: 16px;
+            padding: 12px 14px;
+            border-radius: 12px;
+            color: #8b2d2d;
+            background: #fee2e2;
+        }
+
+        @media (max-width: 680px) {
+            .page-shell {
+                width: min(100% - 20px, 980px);
+                padding-top: 18px;
+            }
+
+            .brand {
+                margin-bottom: 16px;
+            }
+
+            .share-card {
+                border-radius: 24px;
+            }
+
+            .hero {
+                padding: 28px 22px 26px;
+            }
+
+            .content {
+                padding: 20px 14px;
+            }
+
+            .bulk-download {
+                grid-template-columns: minmax(0, 1fr);
+                gap: 14px;
+                padding: 15px;
+            }
+
+            .download-all-button {
+                width: 100%;
+            }
+
+            .bulk-progress,
+            .bulk-help {
+                grid-column: 1;
+            }
+
+            #file-list {
+                grid-template-columns: minmax(0, 1fr);
+            }
+
+            .secure-note {
+                display: none;
+            }
+        }
+
+        @media (prefers-color-scheme: dark) {
+            :root {
+                color-scheme: dark;
+                --text: #e5e9f0;
+                --muted: #aab3bd;
+                --surface: rgba(20, 27, 35, 0.9);
+                --surface-solid: #171e27;
+                --border: rgba(190, 201, 212, 0.13);
+                --page-a: rgba(15, 118, 110, 0.18);
+                --page-b: rgba(89, 101, 168, 0.17);
+                --shadow: 0 24px 70px rgba(0, 0, 0, 0.28);
+            }
+
+            html,
+            body {
+                background-color: #0f151c;
+            }
+
+            .file-index-cell {
+                color: #73d9cc;
+                background: rgba(115, 217, 204, 0.11);
+            }
+
+            .bulk-icon {
+                color: #73d9cc;
+                background: rgba(115, 217, 204, 0.09);
+            }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .file-item,
+            .download-all-button,
+            #bulk-progress-bar {
+                transition: none;
+            }
+        }
+    </style>
+    <script src="main.js" defer></script>
+</head>
+<body>
+<div class="page-shell">
+    <div class="brand">
+        <span class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M22 2 11 13"></path>
+                <path d="m22 2-7 20-4-9-9-4Z"></path>
+            </svg>
+        </span>
+        <span>LocalShare</span>
+    </div>
+
+    <main class="share-card">
+        <section class="hero">
+            <div class="eyebrow"><span class="status-dot"></span> <span id="network-label">Local network</span></div>
+            <h1 id="ready-title">Files ready to receive</h1>
+            <p id="status-text">Connecting to the sender…</p>
+        </section>
+
+        <section class="content">
+            <noscript>LocalShare requires JavaScript. Please enable it and reload this page. / LocalShare 需要 JavaScript，请启用后刷新页面。</noscript>
+            <div class="section-heading">
+                <h2 id="shared-files-title">Shared files</h2>
+                <span class="secure-note">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                        <rect x="3" y="11" width="18" height="10" rx="2"></rect>
+                        <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                    </svg>
+                    <span id="direct-label">Direct from the sender</span>
+                </span>
+            </div>
+            <section id="bulk-download" class="bulk-download is-hidden" aria-labelledby="bulk-title">
+                <div class="bulk-summary">
+                    <span class="bulk-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M12 3v12"></path>
+                            <path d="m7 10 5 5 5-5"></path>
+                            <path d="M5 21h14"></path>
+                        </svg>
+                    </span>
+                    <div class="bulk-copy">
+                        <h3 class="bulk-title" id="bulk-title">Download this batch</h3>
+                        <p class="bulk-meta" id="bulk-meta"></p>
+                    </div>
+                </div>
+                <button class="download-all-button" id="download-all-button" type="button">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M12 3v12"></path>
+                        <path d="m7 10 5 5 5-5"></path>
+                        <path d="M5 21h14"></path>
+                    </svg>
+                    <span id="download-all-label">Download all</span>
+                </button>
+                <div id="bulk-progress" class="bulk-progress is-hidden">
+                    <div class="bulk-progress-copy">
+                        <span id="bulk-progress-status" aria-live="polite"></span>
+                        <span id="bulk-progress-count"></span>
+                    </div>
+                    <div class="bulk-progress-track" id="bulk-progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                        <span id="bulk-progress-bar"></span>
+                    </div>
+                </div>
+                <p class="bulk-help" id="bulk-help">All files are streamed directly from the sender in one ZIP archive.</p>
+            </section>
+            <div id="file-list"></div>
+            <div id="single-file"></div>
+            <p class="footer" id="footer-label">Keep this page open until your downloads finish.</p>
+        </section>
+    </main>
+</div>
+</body>
+</html>

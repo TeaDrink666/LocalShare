@@ -1,0 +1,35 @@
+def redirectRepository = { repository ->
+    if (!repository.hasProperty('url')) {
+        return
+    }
+
+    def original = repository.url.toString()
+    if (original.contains('dl.google.com') ||
+            original.contains('maven.google.com')) {
+        repository.setUrl('https://maven.aliyun.com/repository/google')
+    } else if (original.contains('repo.maven.apache.org') ||
+            original.contains('repo1.maven.org')) {
+        repository.setUrl('https://maven.aliyun.com/repository/central')
+    } else if (original.contains('plugins.gradle.org')) {
+        repository.setUrl('https://maven.aliyun.com/repository/gradle-plugin')
+    } else if (original.contains('jcenter.bintray.com')) {
+        // JCenter redirects many artifacts to Maven Central. Use the aggregate
+        // mirror directly so legacy Flutter plugins avoid that TLS redirect.
+        repository.setUrl('https://maven.aliyun.com/repository/public')
+    }
+}
+
+settingsEvaluated { settings ->
+    settings.pluginManagement.repositories.all { repository ->
+        redirectRepository(repository)
+    }
+}
+
+gradle.beforeProject { project ->
+    project.buildscript.repositories.all { repository ->
+        redirectRepository(repository)
+    }
+    project.repositories.all { repository ->
+        redirectRepository(repository)
+    }
+}
