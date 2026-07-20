@@ -3,6 +3,7 @@ param(
     [switch]$PrepareJunctionsOnly,
     [switch]$RunElevated,
     [switch]$PubGetOnly,
+    [switch]$Release,
     [string]$ElevatedBuildLog
 )
 
@@ -59,6 +60,9 @@ function Invoke-ElevatedBuild {
     )
     if ($PubGetOnly) {
         $arguments += '-PubGetOnly'
+    }
+    if ($Release) {
+        $arguments += '-Release'
     }
 
     Write-Output 'Requesting Administrator access for a hidden build worker...'
@@ -540,7 +544,8 @@ try {
         }
         return
     }
-    & $flutter build windows --debug --no-pub
+    $buildMode = if ($Release) { '--release' } else { '--debug' }
+    & $flutter build windows $buildMode --no-pub
     if ($LASTEXITCODE -ne 0) {
         throw "Flutter Windows build failed with exit code $LASTEXITCODE."
     }

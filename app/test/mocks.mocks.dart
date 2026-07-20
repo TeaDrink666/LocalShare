@@ -361,6 +361,16 @@ class MockPersistenceService extends _i1.Mock implements _i3.PersistenceService 
       ) as _i4.Future<void>);
 
   @override
+  _i4.Future<void> setBackupDestination(String? destination) => (super.noSuchMethod(
+        Invocation.method(
+          #setBackupDestination,
+          [destination],
+        ),
+        returnValue: _i4.Future<void>.value(),
+        returnValueForMissingStub: _i4.Future<void>.value(),
+      ) as _i4.Future<void>);
+
+  @override
   bool isSaveToGallery() => (super.noSuchMethod(
         Invocation.method(
           #isSaveToGallery,

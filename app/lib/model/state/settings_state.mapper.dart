@@ -41,6 +41,8 @@ class SettingsStateMapper extends ClassMapperBase<SettingsState> {
   static const Field<SettingsState, String> _f$multicastGroup = Field('multicastGroup', _$multicastGroup);
   static String? _$destination(SettingsState v) => v.destination;
   static const Field<SettingsState, String> _f$destination = Field('destination', _$destination);
+  static String? _$backupDestination(SettingsState v) => v.backupDestination;
+  static const Field<SettingsState, String> _f$backupDestination = Field('backupDestination', _$backupDestination);
   static bool _$saveToGallery(SettingsState v) => v.saveToGallery;
   static const Field<SettingsState, bool> _f$saveToGallery = Field('saveToGallery', _$saveToGallery);
   static bool _$saveToHistory(SettingsState v) => v.saveToHistory;
@@ -86,6 +88,7 @@ class SettingsStateMapper extends ClassMapperBase<SettingsState> {
     #networkBlacklist: _f$networkBlacklist,
     #multicastGroup: _f$multicastGroup,
     #destination: _f$destination,
+    #backupDestination: _f$backupDestination,
     #saveToGallery: _f$saveToGallery,
     #saveToHistory: _f$saveToHistory,
     #quickSave: _f$quickSave,
@@ -116,6 +119,7 @@ class SettingsStateMapper extends ClassMapperBase<SettingsState> {
         networkBlacklist: data.dec(_f$networkBlacklist),
         multicastGroup: data.dec(_f$multicastGroup),
         destination: data.dec(_f$destination),
+        backupDestination: data.dec(_f$backupDestination),
         saveToGallery: data.dec(_f$saveToGallery),
         saveToHistory: data.dec(_f$saveToHistory),
         quickSave: data.dec(_f$quickSave),
@@ -191,6 +195,7 @@ abstract class SettingsStateCopyWith<$R, $In extends SettingsState, $Out> implem
       List<String>? networkBlacklist,
       String? multicastGroup,
       String? destination,
+      String? backupDestination,
       bool? saveToGallery,
       bool? saveToHistory,
       bool? quickSave,
@@ -236,6 +241,7 @@ class _SettingsStateCopyWithImpl<$R, $Out> extends ClassCopyWithBase<$R, Setting
           Object? networkBlacklist = $none,
           String? multicastGroup,
           Object? destination = $none,
+          Object? backupDestination = $none,
           bool? saveToGallery,
           bool? saveToHistory,
           bool? quickSave,
@@ -263,6 +269,7 @@ class _SettingsStateCopyWithImpl<$R, $Out> extends ClassCopyWithBase<$R, Setting
         if (networkBlacklist != $none) #networkBlacklist: networkBlacklist,
         if (multicastGroup != null) #multicastGroup: multicastGroup,
         if (destination != $none) #destination: destination,
+        if (backupDestination != $none) #backupDestination: backupDestination,
         if (saveToGallery != null) #saveToGallery: saveToGallery,
         if (saveToHistory != null) #saveToHistory: saveToHistory,
         if (quickSave != null) #quickSave: quickSave,
@@ -292,6 +299,7 @@ class _SettingsStateCopyWithImpl<$R, $Out> extends ClassCopyWithBase<$R, Setting
       networkBlacklist: data.get(#networkBlacklist, or: $value.networkBlacklist),
       multicastGroup: data.get(#multicastGroup, or: $value.multicastGroup),
       destination: data.get(#destination, or: $value.destination),
+      backupDestination: data.get(#backupDestination, or: $value.backupDestination),
       saveToGallery: data.get(#saveToGallery, or: $value.saveToGallery),
       saveToHistory: data.get(#saveToHistory, or: $value.saveToHistory),
       quickSave: data.get(#quickSave, or: $value.quickSave),

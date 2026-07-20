@@ -36,6 +36,14 @@ Future<String> getDefaultDestinationDirectory() async {
   }
 }
 
+/// Returns the default root for phone media backups.
+///
+/// This is deliberately a child directory rather than the ordinary receive
+/// root, so backup media never mixes with one-off file transfers by default.
+Future<String> getDefaultBackupDestinationDirectory() async {
+  return p.join(await getDefaultDestinationDirectory(), 'LocalShare Backup');
+}
+
 /// Returns fully-qualified Windows destination candidates in preference order.
 ///
 /// `HOMEPATH` is deliberately never used by itself. On Windows it commonly

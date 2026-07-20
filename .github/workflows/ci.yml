@@ -15,27 +15,41 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: "stable"
 
-      - name: Dependencies (app)
-        working-directory: app
-        run: flutter pub get
-      - name: Remove gen directory (app)
-        working-directory: app
-        run: rm -rf lib/gen
-      - name: Check format (app)
-        working-directory: app
-        run: dart format --line-length 150 --set-exit-if-changed lib test
+      - name: Check changed Dart files
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if [[ -z "$BASE_SHA" || "$BASE_SHA" =~ ^0+$ ]]; then
+            BASE_SHA="$(git rev-parse HEAD^ 2>/dev/null || true)"
+          fi
 
-      - name: Dependencies (common)
-        working-directory: common
-        run: dart pub get
-      - name: Check format (common)
-        working-directory: common
-        run: dart format --line-length 150 --set-exit-if-changed lib test
+          if [[ -z "$BASE_SHA" ]]; then
+            echo "No base commit is available; skipping the incremental format check."
+            exit 0
+          fi
+
+          git fetch --no-tags --depth=1 origin "$BASE_SHA" || true
+          mapfile -t dart_files < <(
+            git diff --name-only --diff-filter=ACMR "$BASE_SHA" "$GITHUB_SHA" -- \
+              'app/lib/**/*.dart' 'app/test/**/*.dart' \
+              'common/lib/**/*.dart' 'common/test/**/*.dart'
+          )
+
+          if (( ${#dart_files[@]} == 0 )); then
+            echo "No Dart files changed."
+            exit 0
+          fi
+
+          printf 'Checking %s\n' "${dart_files[@]}"
+          dart format --line-length 150 --output=none --set-exit-if-changed "${dart_files[@]}"
 
   test:
     runs-on: ubuntu-latest

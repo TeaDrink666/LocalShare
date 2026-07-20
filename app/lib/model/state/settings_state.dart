@@ -19,6 +19,7 @@ class SettingsState with SettingsStateMappable {
   final List<String>? networkBlacklist; // null = disabled
   final String multicastGroup;
   final String? destination; // null = default
+  final String? backupDestination; // null = default backup directory
   final bool saveToGallery; // only Android, iOS
   final bool saveToHistory;
   final bool quickSave; // automatically accept file requests
@@ -47,6 +48,7 @@ class SettingsState with SettingsStateMappable {
     required this.networkBlacklist,
     required this.multicastGroup,
     required this.destination,
+    required this.backupDestination,
     required this.saveToGallery,
     required this.saveToHistory,
     required this.quickSave,

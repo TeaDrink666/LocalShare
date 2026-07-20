@@ -47,6 +47,7 @@ class SettingsService extends PureNotifier<SettingsState> {
         networkBlacklist: _persistence.getNetworkBlacklist(),
         multicastGroup: _persistence.getMulticastGroup(),
         destination: _persistence.getDestination(),
+        backupDestination: _persistence.getBackupDestination(),
         saveToGallery: _persistence.isSaveToGallery(),
         saveToHistory: _persistence.isSaveToHistory(),
         quickSave: _persistence.isQuickSave(),
@@ -139,6 +140,13 @@ class SettingsService extends PureNotifier<SettingsState> {
     await _persistence.setDestination(destination);
     state = state.copyWith(
       destination: destination,
+    );
+  }
+
+  Future<void> setBackupDestination(String? destination) async {
+    await _persistence.setBackupDestination(destination);
+    state = state.copyWith(
+      backupDestination: destination,
     );
   }
 

@@ -18,6 +18,7 @@ import 'package:flutter/foundation.dart';
 import 'package:localsend_app/features/backup/manifest/backup_manifest.dart';
 import 'package:localsend_app/features/backup/protocol/protocol.dart';
 import 'package:localsend_app/features/backup/receiver/backup_file_writer.dart';
+import 'package:localsend_app/features/backup/receiver/backup_destination_path.dart';
 import 'package:localsend_app/features/backup/receiver/backup_receipt_coordinator.dart';
 import 'package:localsend_app/model/state/send/send_session_state.dart';
 import 'package:localsend_app/model/state/server/receive_session_state.dart';
@@ -94,37 +95,24 @@ class ReceiveController {
       request.response.headers
         ..set(HttpHeaders.cacheControlHeader, 'no-store')
         ..set('x-content-type-options', 'nosniff');
-      return await request.respondAsset(
-          200, 'assets/web/receive.js', 'text/javascript; charset=utf-8');
+      return await request.respondAsset(200, 'assets/web/receive.js', 'text/javascript; charset=utf-8');
     });
 
     router.get(ApiRoute.info.v1, (HttpRequest request) async {
-      return await _infoHandler(
-          request: request, alias: alias, fingerprint: fingerprint);
+      return await _infoHandler(request: request, alias: alias, fingerprint: fingerprint);
     });
 
     router.get(ApiRoute.info.v2, (HttpRequest request) async {
-      return await _infoHandler(
-          request: request, alias: alias, fingerprint: fingerprint);
+      return await _infoHandler(request: request, alias: alias, fingerprint: fingerprint);
     });
 
     // An upgraded version of /info
     router.post(ApiRoute.register.v1, (HttpRequest request) async {
-      return await _registerHandler(
-          request: request,
-          alias: alias,
-          port: port,
-          https: https,
-          fingerprint: fingerprint);
+      return await _registerHandler(request: request, alias: alias, port: port, https: https, fingerprint: fingerprint);
     });
 
     router.post(ApiRoute.register.v2, (HttpRequest request) async {
-      return await _registerHandler(
-          request: request,
-          alias: alias,
-          port: port,
-          https: https,
-          fingerprint: fingerprint);
+      return await _registerHandler(request: request, alias: alias, port: port, https: https, fingerprint: fingerprint);
     });
 
     router.post(ApiRoute.prepareUpload.v1, (HttpRequest request) async {
@@ -218,10 +206,8 @@ class ReceiveController {
     }
 
     // Save device information
-    await server.ref.redux(nearbyDevicesProvider).dispatchAsync(
-        RegisterDeviceAction(requestDto.toDevice(request.ip, port, https)));
-    server.ref.notifier(discoveryLoggerProvider).addLog(
-        '[DISCOVER/TCP] Received "/register" HTTP request: ${requestDto.alias} (${request.ip})');
+    await server.ref.redux(nearbyDevicesProvider).dispatchAsync(RegisterDeviceAction(requestDto.toDevice(request.ip, port, https)));
+    server.ref.notifier(discoveryLoggerProvider).addLog('[DISCOVER/TCP] Received "/register" HTTP request: ${requestDto.alias} (${request.ip})');
 
     final deviceInfo = server.ref.read(deviceInfoProvider);
 
@@ -246,8 +232,7 @@ class ReceiveController {
   }) async {
     if (server.getState().session != null) {
       // block incoming requests when we are already in a session
-      return await request.respondJson(409,
-          message: 'Blocked by another session');
+      return await request.respondJson(409, message: 'Blocked by another session');
     }
 
     final pinCorrect = await checkPin(
@@ -280,8 +265,7 @@ class ReceiveController {
 
     if (dto.files.isEmpty) {
       // block empty requests (at least one file is required)
-      return await request.respondJson(400,
-          message: 'Request must contain at least one file');
+      return await request.respondJson(400, message: 'Request must contain at least one file');
     }
 
     if (backupMetadata != null) {
@@ -314,7 +298,9 @@ class ReceiveController {
 
     final settings = server.ref.read(settingsProvider);
     final destinationDir = normalizeDestinationDirectory(
-      settings.destination ?? await getDefaultDestinationDirectory(),
+      backupMetadata == null
+          ? settings.destination ?? await getDefaultDestinationDirectory()
+          : settings.backupDestination ?? await getDefaultBackupDestinationDirectory(),
     );
     final cacheDir = await getCacheDirectory();
     final sessionId = _uuid.v4();
@@ -325,11 +311,9 @@ class ReceiveController {
         final receipt = await backupReceiptCoordinator.receipt(
           backupMetadata.manifestMetadata,
         );
-        alreadyVerifiedMediaKeys =
-            receipt.committedItems.map((item) => item.mediaKey).toSet();
+        alreadyVerifiedMediaKeys = receipt.committedItems.map((item) => item.mediaKey).toSet();
       } catch (error, stackTrace) {
-        _logger.warning(
-            'Could not read the backup receipt ledger.', error, stackTrace);
+        _logger.warning('Could not read the backup receipt ledger.', error, stackTrace);
         return await request.respondJson(
           409,
           message: 'Could not read the backup receipt ledger: $error',
@@ -347,12 +331,7 @@ class ReceiveController {
           sessionId: sessionId,
           status: SessionStatus.waiting,
           sender: dto.info.toDevice(request.ip, port, https),
-          senderAlias: server.ref
-                  .read(favoritesProvider)
-                  .firstWhereOrNull(
-                      (e) => e.fingerprint == dto.info.fingerprint)
-                  ?.alias ??
-              dto.info.alias,
+          senderAlias: server.ref.read(favoritesProvider).firstWhereOrNull((e) => e.fingerprint == dto.info.fingerprint)?.alias ?? dto.info.alias,
           files: {
             for (final file in dto.files.values)
               file.id: ReceivingFile(
@@ -369,23 +348,17 @@ class ReceiveController {
           endTime: null,
           destinationDirectory: destinationDir,
           cacheDirectory: cacheDir,
-          saveToGallery: checkPlatformWithGallery() &&
-              settings.saveToGallery &&
-              dto.files.values.every((f) => !f.fileName.contains('/')),
+          saveToGallery: checkPlatformWithGallery() && settings.saveToGallery && dto.files.values.every((f) => !f.fileName.contains('/')),
           createdDirectories: {},
           responseHandler: streamController,
         ),
       ),
     );
 
-    bool quickSave =
-        settings.quickSave && server.getState().session?.message == null;
-    final quickSaveFromFavorites = settings.quickSaveFromFavorites &&
-        server.getState().session?.message == null;
+    bool quickSave = settings.quickSave && server.getState().session?.message == null;
+    final quickSaveFromFavorites = settings.quickSaveFromFavorites && server.getState().session?.message == null;
     if (quickSaveFromFavorites) {
-      final bool isFavorite = server.ref
-          .read(favoritesProvider)
-          .any((e) => e.fingerprint == dto.info.fingerprint);
+      final bool isFavorite = server.ref.read(favoritesProvider).any((e) => e.fingerprint == dto.info.fingerprint);
       if (isFavorite) {
         quickSave = true;
       }
@@ -397,19 +370,14 @@ class ReceiveController {
         for (final f in dto.files.values) f.id: f.fileName,
       };
     } else {
-      if (checkPlatformHasTray() &&
-          (await windowManager.isMinimized() ||
-              !(await windowManager.isVisible()) ||
-              !(await windowManager.isFocused()))) {
+      if (checkPlatformHasTray() && (await windowManager.isMinimized() || !(await windowManager.isVisible()) || !(await windowManager.isFocused()))) {
         await showFromTray();
       }
 
       final message = server.getState().session?.message;
       if (message != null) {
         // Message already received
-        await server.ref
-            .redux(receiveHistoryProvider)
-            .dispatchAsync(AddHistoryEntryAction(
+        await server.ref.redux(receiveHistoryProvider).dispatchAsync(AddHistoryEntryAction(
               entryId: const Uuid().v4(),
               fileName: message,
               fileType: FileType.text,
@@ -421,18 +389,10 @@ class ReceiveController {
               timestamp: DateTime.now().toUtc(),
             ));
       } else {
-        server.ref.notifier(selectedReceivingFilesProvider).setFiles(server
-            .getState()
-            .session!
-            .files
-            .values
-            .map((f) => f.file)
-            .toList());
+        server.ref.notifier(selectedReceivingFilesProvider).setFiles(server.getState().session!.files.values.map((f) => f.file).toList());
       }
 
-      server.ref
-          .redux(receivePageControllerProvider)
-          .dispatch(InitReceivePageAction());
+      server.ref.redux(receivePageControllerProvider).dispatch(InitReceivePageAction());
 
       // ignore: use_build_context_synchronously, unawaited_futures
       Routerino.context.push(() => const ReceivePage());
@@ -443,14 +403,12 @@ class ReceiveController {
 
     if (server.getState().session == null) {
       // somehow this state is already disposed
-      return await request.respondJson(500,
-          message: 'Server is in invalid state');
+      return await request.respondJson(500, message: 'Server is in invalid state');
     }
 
     if (selection == null) {
       closeSession();
-      return await request.respondJson(403,
-          message: 'File request declined by recipient');
+      return await request.respondJson(403, message: 'File request declined by recipient');
     }
 
     if (backupMetadata != null && alreadyVerifiedMediaKeys.isNotEmpty) {
@@ -501,9 +459,7 @@ class ReceiveController {
                   entry.file.id,
                   ReceivingFile(
                     file: entry.file,
-                    status: desiredName != null
-                        ? FileStatus.queue
-                        : FileStatus.skipped,
+                    status: desiredName != null ? FileStatus.queue : FileStatus.skipped,
                     token: desiredName != null ? _uuid.v4() : null,
                     desiredName: desiredName,
                     path: null,
@@ -529,22 +485,11 @@ class ReceiveController {
     }
 
     final files = {
-      for (final file in server
-          .getState()
-          .session!
-          .files
-          .values
-          .where((f) => f.token != null))
-        file.file.id: file.token,
+      for (final file in server.getState().session!.files.values.where((f) => f.token != null)) file.file.id: file.token,
     };
 
     if (checkPlatform([TargetPlatform.android, TargetPlatform.iOS])) {
-      if (checkPlatform([TargetPlatform.android]) &&
-          !server
-              .getState()
-              .session!
-              .destinationDirectory
-              .startsWith('/storage/emulated/0/Download')) {
+      if (checkPlatform([TargetPlatform.android]) && !server.getState().session!.destinationDirectory.startsWith('/storage/emulated/0/Download')) {
         // Android requires more permission to save files outside of the Download directory
         try {
           final result = await Permission.storage.request();
@@ -581,20 +526,14 @@ class ReceiveController {
     }
 
     if (request.ip != receiveState.sender.ip) {
-      _logger.warning(
-          'Invalid ip address: ${request.ip} (expected: ${receiveState.sender.ip})');
-      return await request.respondJson(403,
-          message: 'Invalid IP address: ${request.ip}');
+      _logger.warning('Invalid ip address: ${request.ip} (expected: ${receiveState.sender.ip})');
+      return await request.respondJson(403, message: 'Invalid IP address: ${request.ip}');
     }
 
-    const allowedStates = {
-      SessionStatus.sending,
-      SessionStatus.finishedWithErrors
-    };
+    const allowedStates = {SessionStatus.sending, SessionStatus.finishedWithErrors};
     if (!allowedStates.contains(receiveState.status)) {
       _logger.warning('Wrong state: ${receiveState.status}');
-      return await request.respondJson(409,
-          message: 'Recipient is in wrong state');
+      return await request.respondJson(409, message: 'Recipient is in wrong state');
     }
 
     final fileId = request.uri.queryParameters['fileId'];
@@ -602,23 +541,20 @@ class ReceiveController {
     final sessionId = request.uri.queryParameters['sessionId'];
     if (fileId == null || token == null || (v2 && sessionId == null)) {
       // reject because of missing parameters
-      _logger.warning(
-          'Missing parameters: fileId=$fileId, token=$token, sessionId=$sessionId');
+      _logger.warning('Missing parameters: fileId=$fileId, token=$token, sessionId=$sessionId');
       return await request.respondJson(400, message: 'Missing parameters');
     }
 
     if (v2 && sessionId != receiveState.sessionId) {
       // reject because of wrong session id
-      _logger.warning(
-          'Wrong session id: $sessionId (expected: ${receiveState.sessionId})');
+      _logger.warning('Wrong session id: $sessionId (expected: ${receiveState.sessionId})');
       return await request.respondJson(403, message: 'Invalid session id');
     }
 
     final receivingFile = receiveState.files[fileId];
     if (receivingFile == null || receivingFile.token != token) {
       // reject because there is no file or token does not match
-      _logger.warning(
-          'Wrong fileId: $fileId (expected: ${receivingFile?.file.id})');
+      _logger.warning('Wrong fileId: $fileId (expected: ${receivingFile?.file.id})');
       return await request.respondJson(403, message: 'Invalid token');
     }
 
@@ -632,16 +568,13 @@ class ReceiveController {
                 status: FileStatus.sending,
               ),
             ),
-          startTime:
-              receiveState.startTime ?? DateTime.now().millisecondsSinceEpoch,
-          status: SessionStatus
-              .sending, // in case it was finishedWithErrors and user retries a failed file
+          startTime: receiveState.startTime ?? DateTime.now().millisecondsSinceEpoch,
+          status: SessionStatus.sending, // in case it was finishedWithErrors and user retries a failed file
         ),
       ),
     );
     final fileType = receivingFile.file.fileType;
-    final saveToGallery = receiveState.saveToGallery &&
-        (fileType == FileType.image || fileType == FileType.video);
+    final saveToGallery = receiveState.saveToGallery && (fileType == FileType.image || fileType == FileType.video);
     final backupItem = backupReceiptCoordinator.itemForSession(
       receiveState.sessionId,
       fileId,
@@ -649,12 +582,10 @@ class ReceiveController {
 
     String? outerDestinationPath;
     try {
-      final (destinationPath, documentUri, finalName) =
-          await digestFilePathAndPrepareDirectory(
-        parentDirectory: saveToGallery
-            ? receiveState.cacheDirectory
-            : receiveState.destinationDirectory,
-        fileName: receivingFile.desiredName!,
+      final targetFileName = backupItem == null ? receivingFile.desiredName! : backupDestinationFileName(backupItem.snapshotItem);
+      final (destinationPath, documentUri, finalName) = await digestFilePathAndPrepareDirectory(
+        parentDirectory: saveToGallery ? receiveState.cacheDirectory : receiveState.destinationDirectory,
+        fileName: targetFileName,
         createdDirectories: receiveState.createdDirectories,
       );
 
@@ -691,8 +622,7 @@ class ReceiveController {
           bytes: byteStream,
           expectedSize: backupItem.snapshotItem.sizeBytes,
           expectedSha256: backupItem.sha256,
-          batchId: backupReceiptCoordinator
-              .batchIdForSession(receiveState.sessionId)!,
+          batchId: backupReceiptCoordinator.batchIdForSession(receiveState.sessionId)!,
           mediaKey: backupItem.snapshotItem.mediaKey,
           beforeCommit: (actualSize, actualSha256) {
             return backupReceiptCoordinator.markReady(
@@ -739,10 +669,8 @@ class ReceiveController {
           },
         );
       }
-      if (server.getState().session == null ||
-          !allowedStates.contains(server.getState().session!.status)) {
-        return await request.respondJson(500,
-            message: 'Server is in invalid state');
+      if (server.getState().session == null || !allowedStates.contains(server.getState().session!.status)) {
+        return await request.respondJson(500, message: 'Server is in invalid state');
       }
       server.setState(
         (oldState) => oldState?.copyWith(
@@ -757,9 +685,7 @@ class ReceiveController {
       );
 
       // Track it in history
-      await server.ref
-          .redux(receiveHistoryProvider)
-          .dispatchAsync(AddHistoryEntryAction(
+      await server.ref.redux(receiveHistoryProvider).dispatchAsync(AddHistoryEntryAction(
             entryId: fileId,
             fileName: receivingFile.desiredName!,
             fileType: receivingFile.file.fileType,
@@ -809,34 +735,25 @@ class ReceiveController {
 
     final session = server.getState().session;
     if (session == null) {
-      return await request.respondJson(500,
-          message: 'Server is in invalid state');
+      return await request.respondJson(500, message: 'Server is in invalid state');
     }
 
-    if (allowedStates.contains(session.status) &&
-        session.files.values.map((e) => e.status).isFinishedOrError) {
-      final hasError =
-          session.files.values.any((f) => f.status == FileStatus.failed);
+    if (allowedStates.contains(session.status) && session.files.values.map((e) => e.status).isFinishedOrError) {
+      final hasError = session.files.values.any((f) => f.status == FileStatus.failed);
       server.setState(
         (oldState) => oldState?.copyWith(
           session: oldState.session!.copyWith(
-            status: hasError
-                ? SessionStatus.finishedWithErrors
-                : SessionStatus.finished,
+            status: hasError ? SessionStatus.finishedWithErrors : SessionStatus.finished,
             endTime: DateTime.now().millisecondsSinceEpoch,
           ),
         ),
       );
       final settings = server.ref.read(settingsProvider);
-      bool quickSave =
-          settings.quickSave && server.getState().session?.message == null;
-      final quickSaveFromFavorites = settings.quickSaveFromFavorites &&
-          server.getState().session?.message == null;
+      bool quickSave = settings.quickSave && server.getState().session?.message == null;
+      final quickSaveFromFavorites = settings.quickSaveFromFavorites && server.getState().session?.message == null;
       if (quickSaveFromFavorites) {
         // dto is not defined here. I must check sender fingerprint
-        final bool isFavorite = server.ref
-            .read(favoritesProvider)
-            .any((e) => e.fingerprint == session.sender.fingerprint);
+        final bool isFavorite = server.ref.read(favoritesProvider).any((e) => e.fingerprint == session.sender.fingerprint);
         if (isFavorite) {
           quickSave = true;
         }
@@ -848,8 +765,7 @@ class ReceiveController {
           _logger.info('Closing session');
 
           // ignore: use_build_context_synchronously
-          Routerino.context.pushRootImmediately(() =>
-              const HomePage(initialTab: HomeTab.receive, appStart: false));
+          Routerino.context.pushRootImmediately(() => const HomePage(initialTab: HomeTab.receive, appStart: false));
 
           // open the dialog to open file instantly
           if (outerDestinationPath != null && outerDestinationPath.isNotEmpty) {
@@ -865,12 +781,9 @@ class ReceiveController {
       _logger.info('Received all files.');
     }
 
-    return server.getState().session?.files[fileId]?.status ==
-            FileStatus.finished
+    return server.getState().session?.files[fileId]?.status == FileStatus.finished
         ? await request.respondJson(200)
-        : await request.respondJson(500,
-            message:
-                'Could not save file. Check receiving device for more information.');
+        : await request.respondJson(500, message: 'Could not save file. Check receiving device for more information.');
   }
 
   Future<void> _cancelHandler({
@@ -901,8 +814,7 @@ class ReceiveController {
 
       // check if valid state
       final currentStatus = receiveSession.status;
-      if (currentStatus != SessionStatus.waiting &&
-          currentStatus != SessionStatus.sending) {
+      if (currentStatus != SessionStatus.waiting && currentStatus != SessionStatus.sending) {
         return await request.respondJson(403, message: 'No permission');
       }
 
@@ -917,8 +829,7 @@ class ReceiveController {
       if (v2) {
         // In v2, we require sessionId.
 
-        final selectedSession = sendSessions.values
-            .firstWhereOrNull((s) => s.remoteSessionId == sessionId);
+        final selectedSession = sendSessions.values.firstWhereOrNull((s) => s.remoteSessionId == sessionId);
         if (selectedSession == null) {
           return await request.respondJson(403, message: 'No permission');
         }
@@ -971,15 +882,10 @@ class ReceiveController {
         }
 
         final Map<String, dynamic> jsonBody = jsonDecode(body);
-        final List<String> args =
-            (jsonBody['args'] as List?)?.cast<String>() ?? <String>[];
-        final filesAdded = await server.ref
-            .redux(selectedSendingFilesProvider)
-            .dispatchAsyncTakeResult(LoadSelectionFromArgsAction(args));
+        final List<String> args = (jsonBody['args'] as List?)?.cast<String>() ?? <String>[];
+        final filesAdded = await server.ref.redux(selectedSendingFilesProvider).dispatchAsyncTakeResult(LoadSelectionFromArgsAction(args));
         if (filesAdded) {
-          server.ref
-              .redux(homePageControllerProvider)
-              .dispatch(ChangeTabAction(HomeTab.send));
+          server.ref.redux(homePageControllerProvider).dispatch(ChangeTabAction(HomeTab.send));
         }
       });
 
@@ -1014,8 +920,7 @@ class ReceiveController {
     server.setState(
       (oldState) => oldState?.copyWith(
         session: oldState.session?.copyWith(
-          destinationDirectory:
-              normalizeDestinationDirectory(destinationDirectory),
+          destinationDirectory: normalizeDestinationDirectory(destinationDirectory),
         ),
       ),
     );
@@ -1045,8 +950,7 @@ class ReceiveController {
     // notify sender
     try {
       // ignore: unawaited_futures
-      server.ref.read(httpProvider).discovery.post(ApiRoute.cancel
-          .target(session.sender, query: {'sessionId': session.sessionId}));
+      server.ref.read(httpProvider).discovery.post(ApiRoute.cancel.target(session.sender, query: {'sessionId': session.sessionId}));
     } catch (e) {
       _logger.warning('Failed to notify sender', e);
     }
@@ -1120,13 +1024,11 @@ String? _validateBackupFileDescriptors({
   required Map<String, FileDto> files,
 }) {
   final mappedFileIds = metadata.fileIdToMediaKey.keys.toSet();
-  if (mappedFileIds.length != files.length ||
-      !mappedFileIds.containsAll(files.keys)) {
+  if (mappedFileIds.length != files.length || !mappedFileIds.containsAll(files.keys)) {
     return 'Backup file mapping does not match the upload descriptors.';
   }
   final itemsByKey = <String, BackupManifestItem>{
-    for (final item in metadata.manifest.items)
-      item.snapshotItem.mediaKey: item,
+    for (final item in metadata.manifest.items) item.snapshotItem.mediaKey: item,
   };
   for (final entry in files.entries) {
     final mediaKey = metadata.fileIdToMediaKey[entry.key];
@@ -1135,8 +1037,7 @@ String? _validateBackupFileDescriptors({
       return 'Backup descriptor references an unknown media item.';
     }
     final media = item.snapshotItem;
-    if (entry.value.fileName != '${media.relativePath}${media.displayName}' ||
-        entry.value.size != media.sizeBytes) {
+    if (entry.value.fileName != '${media.relativePath}${media.displayName}' || entry.value.size != media.sizeBytes) {
       return 'Backup descriptor does not match its manifest item.';
     }
   }

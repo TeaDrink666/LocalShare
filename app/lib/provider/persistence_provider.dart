@@ -71,6 +71,7 @@ const _networkBlacklistKey = 'ls_network_blacklist';
 const _timeoutKey = 'ls_timeout';
 const _multicastGroupKey = 'ls_multicast_group';
 const _destinationKey = 'ls_destination';
+const _backupDestinationKey = 'ls_backup_destination';
 const _saveToGallery = 'ls_save_to_gallery';
 const _saveToHistory = 'ls_save_to_history';
 const _quickSave = 'ls_quick_save';
@@ -345,6 +346,18 @@ class PersistenceService {
       await _prefs.remove(_destinationKey);
     } else {
       await _prefs.setString(_destinationKey, destination);
+    }
+  }
+
+  String? getBackupDestination() {
+    return _prefs.getString(_backupDestinationKey);
+  }
+
+  Future<void> setBackupDestination(String? destination) async {
+    if (destination == null) {
+      await _prefs.remove(_backupDestinationKey);
+    } else {
+      await _prefs.setString(_backupDestinationKey, destination);
     }
   }
 

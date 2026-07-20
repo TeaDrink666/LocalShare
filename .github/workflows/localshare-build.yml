@@ -52,8 +52,8 @@ jobs:
             app/build/app/outputs/flutter-apk/app-x86_64-release.apk
 
   windows:
-    name: Windows Release Bundle
-    runs-on: windows-latest
+    name: Windows Release Packages
+    runs-on: windows-2022
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -94,9 +94,26 @@ jobs:
         shell: pwsh
         run: Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath LocalShare-windows-x64-release.zip
 
-      - name: Upload Windows bundle
+      - name: Build Windows installer
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path -LiteralPath $iscc)) {
+            choco install innosetup --no-progress -y
+          }
+          if (-not (Test-Path -LiteralPath $iscc)) {
+            throw "Inno Setup compiler was not found at $iscc"
+          }
+          & $iscc scripts/compile_localshare_setup.iss
+          if ($LASTEXITCODE -ne 0) {
+            throw "Inno Setup compilation failed with exit code $LASTEXITCODE"
+          }
+
+      - name: Upload Windows packages
         uses: actions/upload-artifact@v4
         with:
           name: LocalShare-Windows-Release
           if-no-files-found: error
-          path: app/LocalShare-windows-x64-release.zip
+          path: |
+            app/LocalShare-windows-x64-release.zip
+            dist/LocalShare-Setup-*-x64.exe

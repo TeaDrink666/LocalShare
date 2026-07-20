@@ -2,7 +2,7 @@
 ; Build the Flutter Release bundle before compiling this script with ISCC.exe.
 
 #define MyAppName "LocalShare"
-#define MyAppVersion "0.1.0.59"
+#define MyAppVersion "0.1.0.60"
 #define MyAppPublisher "LocalShare"
 #define MyAppExeName "LocalShare.exe"
 #define ProjectRoot AddBackslash(SourcePath) + ".."
