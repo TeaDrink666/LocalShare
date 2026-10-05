@@ -25,6 +25,7 @@ import 'package:localsend_app/util/ui/nav_bar_padding.dart';
 import 'package:localsend_app/widget/custom_progress_bar.dart';
 import 'package:localsend_app/widget/dialogs/add_file_dialog.dart';
 import 'package:localsend_app/widget/localshare_design/design_tokens.dart';
+import 'package:localsend_app/widget/localshare_design/localshare_hero.dart';
 import 'package:localsend_app/widget/localshare_design/localshare_surface.dart';
 import 'package:localsend_app/widget/rotating_widget.dart';
 import 'package:refena_flutter/refena_flutter.dart';
@@ -39,15 +40,12 @@ class SendTab extends StatelessWidget {
   Widget build(BuildContext context) {
     return ViewModelBuilder(
       provider: sendTabVmProvider,
-      init: (context) async => context.global.dispatchAsync(
-          SendTabInitAction(context)), // ignore: discarded_futures
+      init: (context) async => context.global.dispatchAsync(SendTabInitAction(context)), // ignore: discarded_futures
       builder: (context, vm) {
         final ref = context.ref;
         return LayoutBuilder(
           builder: (context, constraints) {
-            final horizontalPadding = constraints.maxWidth < 600
-                ? LocalShareSpacing.md
-                : LocalShareSpacing.lg;
+            final horizontalPadding = constraints.maxWidth < 600 ? LocalShareSpacing.md : LocalShareSpacing.lg;
 
             return Scrollbar(
               child: SingleChildScrollView(
@@ -64,8 +62,7 @@ class SendTab extends StatelessWidget {
                       ),
                       child: vm.selectedFiles.isEmpty
                           ? _ContentPicker(
-                              onPick: (option) async =>
-                                  ref.global.dispatchAsync(
+                              onPick: (option) async => ref.global.dispatchAsync(
                                 PickFileAction(
                                   option: option,
                                   context: context,
@@ -77,16 +74,13 @@ class SendTab extends StatelessWidget {
                               children: [
                                 _SelectedFilesBar(
                                   files: vm.selectedFiles,
-                                  onClear: () => ref
-                                      .redux(selectedSendingFilesProvider)
-                                      .dispatch(ClearSelectionAction()),
+                                  onClear: () => ref.redux(selectedSendingFilesProvider).dispatch(ClearSelectionAction()),
                                   onEdit: () async {
                                     await context.push(
                                       () => const SelectedFilesPage(),
                                     );
                                   },
-                                  onAdd: () async =>
-                                      _openAddFileDialog(context, ref),
+                                  onAdd: () async => _openAddFileDialog(context, ref),
                                 ),
                                 const SizedBox(height: LocalShareSpacing.lg),
                                 _NearbyDevicesPanel(vm: vm),
@@ -129,23 +123,26 @@ class _ContentPicker extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return LocalShareSurface(
-      padding: const EdgeInsets.all(LocalShareSpacing.md),
+    return LocalShareCard(
+      padding: const EdgeInsets.all(LocalShareSpacing.lg),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
             '选择要发送的内容',
-            style: theme.textTheme.titleLarge,
+            style: theme.textTheme.headlineSmall?.copyWith(
+              fontWeight: FontWeight.w700,
+              letterSpacing: -0.3,
+            ),
           ),
-          const SizedBox(height: LocalShareSpacing.xxs),
+          const SizedBox(height: LocalShareSpacing.xs),
           Text(
             '选完后再选附近设备或生成链接',
-            style: theme.textTheme.bodySmall?.copyWith(
+            style: theme.textTheme.bodyMedium?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
             ),
           ),
-          const SizedBox(height: LocalShareSpacing.md),
+          const SizedBox(height: LocalShareSpacing.lg),
           _PickerGrid(onPick: onPick),
         ],
       ),
@@ -165,8 +162,7 @@ class _PickerGrid extends StatelessWidget {
       builder: (context, constraints) {
         final columns = constraints.maxWidth >= 700
             ? 3
-            : constraints.maxWidth < 280 ||
-                    (textScale > 1.35 && constraints.maxWidth < 440)
+            : constraints.maxWidth < 280 || (textScale > 1.35 && constraints.maxWidth < 440)
                 ? 1
                 : 2;
         const gap = LocalShareSpacing.sm;
@@ -200,8 +196,7 @@ class _PickerOptionTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return LocalShareSurface(
-      style: LocalShareSurfaceStyle.subtle,
+    return LocalShareCard(
       padding: const EdgeInsets.symmetric(
         horizontal: LocalShareSpacing.sm,
         vertical: LocalShareSpacing.sm,
@@ -213,7 +208,7 @@ class _PickerOptionTile extends StatelessWidget {
           DecoratedBox(
             decoration: BoxDecoration(
               color: theme.colorScheme.primaryContainer,
-              borderRadius: BorderRadius.circular(LocalShareRadii.small),
+              borderRadius: BorderRadius.circular(LocalShareRadii.medium),
             ),
             child: Padding(
               padding: const EdgeInsets.all(LocalShareSpacing.xs),
@@ -226,7 +221,12 @@ class _PickerOptionTile extends StatelessWidget {
           ),
           const SizedBox(width: LocalShareSpacing.sm),
           Expanded(
-            child: Text(option.label, style: theme.textTheme.titleSmall),
+            child: Text(
+              option.label,
+              style: theme.textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ),
           Icon(
             Icons.chevron_right_rounded,
@@ -267,17 +267,25 @@ class _SelectedFilesBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final totalSize = files.fold<int>(0, (total, file) => total + file.size);
-    return LocalShareSurface(
-      style: LocalShareSurfaceStyle.subtle,
+    return LocalShareCard(
       padding: const EdgeInsets.symmetric(
         horizontal: LocalShareSpacing.sm,
         vertical: LocalShareSpacing.xs,
       ),
       child: Row(
         children: [
-          Icon(
-            Icons.inventory_2_outlined,
-            color: theme.colorScheme.primary,
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: theme.colorScheme.primaryContainer,
+              borderRadius: BorderRadius.circular(LocalShareRadii.medium),
+            ),
+            child: Icon(
+              Icons.inventory_2_rounded,
+              size: 21,
+              color: theme.colorScheme.onPrimaryContainer,
+            ),
           ),
           const SizedBox(width: LocalShareSpacing.sm),
           Expanded(
@@ -287,8 +295,11 @@ class _SelectedFilesBar extends StatelessWidget {
               children: [
                 Text(
                   '已选择 ${files.length} 项',
-                  style: theme.textTheme.titleSmall,
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
+                const SizedBox(height: 2),
                 Text(
                   totalSize.asReadableFileSize,
                   style: theme.textTheme.bodySmall?.copyWith(
@@ -330,18 +341,26 @@ class _WebTransferEntry extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return LocalShareSurface(
+    return LocalShareCard(
       padding: const EdgeInsets.symmetric(
         horizontal: LocalShareSpacing.md,
         vertical: LocalShareSpacing.sm,
       ),
       onTap: onTap,
-      semanticLabel: '通过链接发送，生成链接或二维码',
       child: Row(
         children: [
-          Icon(
-            Icons.link_rounded,
-            color: theme.colorScheme.primary,
+          Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color: theme.colorScheme.primaryContainer,
+              borderRadius: BorderRadius.circular(LocalShareRadii.medium),
+            ),
+            child: Icon(
+              Icons.link_rounded,
+              size: 21,
+              color: theme.colorScheme.onPrimaryContainer,
+            ),
           ),
           const SizedBox(width: LocalShareSpacing.sm),
           Expanded(
@@ -349,7 +368,12 @@ class _WebTransferEntry extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text('通过链接发送', style: theme.textTheme.titleSmall),
+                Text(
+                  '通过链接发送',
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
                 const SizedBox(height: LocalShareSpacing.xxs),
                 Text(
                   '接收端打开链接或扫码，无需安装软件',
@@ -389,12 +413,16 @@ class _NearbyDevicesPanel extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('附近设备', style: theme.textTheme.titleLarge),
+                  Text(
+                    '附近设备',
+                    style: theme.textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: -0.2,
+                    ),
+                  ),
                   const SizedBox(height: LocalShareSpacing.xxs),
                   Text(
-                    vm.nearbyDevices.isEmpty
-                        ? '正在搜索同一局域网内的设备'
-                        : '${vm.nearbyDevices.length} 台设备可用',
+                    vm.nearbyDevices.isEmpty ? '正在搜索同一局域网内的设备' : '${vm.nearbyDevices.length} 台设备可用',
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: theme.colorScheme.onSurfaceVariant,
                     ),
@@ -415,8 +443,7 @@ class _NearbyDevicesPanel extends StatelessWidget {
             builder: (context, constraints) {
               final columns = constraints.maxWidth >= 720 ? 2 : 1;
               const gap = LocalShareSpacing.sm;
-              final itemWidth =
-                  (constraints.maxWidth - gap * (columns - 1)) / columns;
+              final itemWidth = (constraints.maxWidth - gap * (columns - 1)) / columns;
               return Wrap(
                 spacing: gap,
                 runSpacing: gap,
@@ -435,8 +462,7 @@ class _NearbyDevicesPanel extends StatelessWidget {
                             device: device,
                             isFavorite: favoriteEntry != null,
                             nameOverride: favoriteEntry?.alias,
-                            onFavoriteTap: () async =>
-                                vm.onToggleFavorite(context, device),
+                            onFavoriteTap: () async => vm.onToggleFavorite(context, device),
                             onTap: () async => vm.onTapDevice(context, device),
                           ),
                   );
@@ -475,9 +501,7 @@ class _NearbyMoreMenu extends StatelessWidget {
           case _NearbyMenuAction.toggleMultiple:
             await vm.onTapSendMode(
               context,
-              vm.sendMode == SendMode.multiple
-                  ? SendMode.single
-                  : SendMode.multiple,
+              vm.sendMode == SendMode.multiple ? SendMode.single : SendMode.multiple,
             );
           case _NearbyMenuAction.troubleshoot:
             await context.push(() => const TroubleshootPage());
@@ -529,8 +553,7 @@ class _NearbyEmptyState extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final (scanningFavorites, scanningIps) = context.ref.watch(
-      nearbyDevicesProvider
-          .select((state) => (state.runningFavoriteScan, state.runningIps)),
+      nearbyDevicesProvider.select((state) => (state.runningFavoriteScan, state.runningIps)),
     );
     final scanning = scanningFavorites || scanningIps.isNotEmpty;
 
@@ -634,16 +657,11 @@ class _ScanButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final (scanningFavorites, scanningIps) = context.ref.watch(
-        nearbyDevicesProvider
-            .select((s) => (s.runningFavoriteScan, s.runningIps)));
+    final (scanningFavorites, scanningIps) = context.ref.watch(nearbyDevicesProvider.select((s) => (s.runningFavoriteScan, s.runningIps)));
     final animations = context.ref.watch(animationProvider);
 
-    final spinning =
-        (scanningFavorites || scanningIps.isNotEmpty) && animations;
-    final iconColor = !animations && scanningIps.isNotEmpty
-        ? Theme.of(context).colorScheme.warning
-        : null;
+    final spinning = (scanningFavorites || scanningIps.isNotEmpty) && animations;
+    final iconColor = !animations && scanningIps.isNotEmpty ? Theme.of(context).colorScheme.warning : null;
 
     if (ips.length <= StartSmartScan.maxInterfaces) {
       return IconButton(
@@ -661,11 +679,8 @@ class _ScanButton extends StatelessWidget {
     return _CircularPopupButton(
       tooltip: t.sendTab.scan,
       onSelected: (ip) async {
-        context
-            .redux(nearbyDevicesProvider)
-            .dispatch(ClearFoundDevicesAction());
-        await context.global
-            .dispatchAsync(StartLegacySubnetScan(subnets: [ip]));
+        context.redux(nearbyDevicesProvider).dispatch(ClearFoundDevicesAction());
+        await context.global.dispatchAsync(StartLegacySubnetScan(subnets: [ip]));
       },
       itemBuilder: (_) {
         return [
@@ -706,8 +721,7 @@ class _RotatingSyncIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scanningIps =
-        context.ref.watch(nearbyDevicesProvider.select((s) => s.runningIps));
+    final scanningIps = context.ref.watch(nearbyDevicesProvider.select((s) => s.runningIps));
     return RotatingWidget(
       duration: const Duration(seconds: 2),
       spinning: scanningIps.contains(ip),
@@ -740,27 +754,25 @@ class _ModernDeviceTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
-    return LocalShareSurface(
+    return LocalShareCard(
       padding: EdgeInsets.zero,
       onTap: onTap,
-      semanticLabel: '${nameOverride ?? device.alias}，${device.ip}',
       child: Padding(
         padding: const EdgeInsets.all(LocalShareSpacing.sm),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            DecoratedBox(
+            Container(
+              width: 44,
+              height: 44,
               decoration: BoxDecoration(
                 color: colors.primaryContainer,
-                borderRadius: BorderRadius.circular(LocalShareRadii.small),
+                borderRadius: BorderRadius.circular(LocalShareRadii.medium),
               ),
-              child: Padding(
-                padding: const EdgeInsets.all(LocalShareSpacing.xs),
-                child: Icon(
-                  device.deviceType.icon,
-                  size: 24,
-                  color: colors.onPrimaryContainer,
-                ),
+              child: Icon(
+                device.deviceType.icon,
+                size: 23,
+                color: colors.onPrimaryContainer,
               ),
             ),
             const SizedBox(width: LocalShareSpacing.sm),
@@ -770,7 +782,9 @@ class _ModernDeviceTile extends StatelessWidget {
                 children: [
                   Text(
                     nameOverride ?? device.alias,
-                    style: theme.textTheme.titleSmall,
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -807,9 +821,7 @@ class _ModernDeviceTile extends StatelessWidget {
               tooltip: isFavorite ? '取消收藏' : '收藏设备',
               onPressed: onFavoriteTap,
               icon: Icon(
-                isFavorite
-                    ? Icons.favorite_rounded
-                    : Icons.favorite_border_rounded,
+                isFavorite ? Icons.favorite_rounded : Icons.favorite_border_rounded,
                 color: isFavorite ? colors.primary : colors.onSurfaceVariant,
               ),
             ),
@@ -837,24 +849,14 @@ class _MultiSendDeviceListTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ref = context.ref;
-    final session = ref
-        .watch(sendProvider)
-        .values
-        .firstWhereOrNull((s) => s.target.ip == device.ip);
+    final session = ref.watch(sendProvider).values.firstWhereOrNull((s) => s.target.ip == device.ip);
     final double? progress;
     if (session != null) {
       final files = session.files.values.where((f) => f.token != null);
       final progressNotifier = ref.watch(progressProvider);
       final currBytes = files.fold<int>(
-          0,
-          (prev, curr) =>
-              prev +
-              ((progressNotifier.getProgress(
-                          sessionId: session.sessionId, fileId: curr.file.id) *
-                      curr.file.size)
-                  .round()));
-      final totalBytes =
-          files.fold<int>(0, (prev, curr) => prev + curr.file.size);
+          0, (prev, curr) => prev + ((progressNotifier.getProgress(sessionId: session.sessionId, fileId: curr.file.id) * curr.file.size).round()));
+      final totalBytes = files.fold<int>(0, (prev, curr) => prev + curr.file.size);
       progress = totalBytes == 0 ? 0 : currBytes / totalBytes;
     } else {
       progress = null;

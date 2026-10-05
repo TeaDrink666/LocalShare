@@ -13,6 +13,7 @@ import 'package:localsend_app/widget/dialogs/quick_actions_dialog.dart';
 import 'package:localsend_app/widget/localshare_design/localshare_design.dart';
 import 'package:localsend_app/widget/responsive_list_view.dart';
 import 'package:refena_flutter/refena_flutter.dart';
+import 'package:routerino/routerino.dart';
 
 class ReceiveOptionsPage extends StatelessWidget {
   const ReceiveOptionsPage({super.key});
@@ -22,13 +23,16 @@ class ReceiveOptionsPage extends StatelessWidget {
     final ref = context.ref;
     final session = ref.watch(serverProvider.select((state) => state?.session));
     if (session == null) {
-      return const Scaffold(body: SizedBox());
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
     }
     final selection = ref.watch(selectedReceivingFilesProvider);
     final allFiles = session.files.values.toList();
-    final selectedSize = allFiles
-        .where((file) => selection.containsKey(file.file.id))
-        .fold<int>(0, (sum, file) => sum + file.file.size);
+    final selectedSize = allFiles.where((file) => selection.containsKey(file.file.id)).fold<int>(0, (sum, file) => sum + file.file.size);
+
+    final selectedCount = selection.length;
+    final acceptDisabled = selectedCount == 0;
 
     return Scaffold(
       appBar: AppBar(title: Text(_OptionsCopy.pageTitle)),
@@ -45,16 +49,12 @@ class ReceiveOptionsPage extends StatelessWidget {
             ),
             const SizedBox(height: 16),
             _DestinationCard(
-              destination: checkPlatformWithFileSystem()
-                  ? session.destinationDirectory
-                  : t.receiveOptionsPage.appDirectory,
+              destination: checkPlatformWithFileSystem() ? session.destinationDirectory : t.receiveOptionsPage.appDirectory,
               onChange: checkPlatformWithFileSystem()
                   ? () async {
                       final directory = await pickDirectoryPath();
                       if (directory != null) {
-                        ref
-                            .notifier(serverProvider)
-                            .setSessionDestinationDir(directory);
+                        ref.notifier(serverProvider).setSessionDestinationDir(directory);
                       }
                     }
                   : null,
@@ -64,9 +64,7 @@ class ReceiveOptionsPage extends StatelessWidget {
               _GalleryCard(
                 enabled: session.saveToGallery,
                 containsDirectories: session.containsDirectories,
-                onChanged: (enabled) => ref
-                    .notifier(serverProvider)
-                    .setSessionSaveToGallery(enabled),
+                onChanged: (enabled) => ref.notifier(serverProvider).setSessionSaveToGallery(enabled),
               ),
             ],
             const SizedBox(height: 20),
@@ -77,9 +75,7 @@ class ReceiveOptionsPage extends StatelessWidget {
                   builder: (_) => const QuickActionsDialog(),
                 );
               },
-              onReset: () => ref
-                  .notifier(selectedReceivingFilesProvider)
-                  .setFiles(allFiles.map((file) => file.file).toList()),
+              onReset: () => ref.notifier(selectedReceivingFilesProvider).setFiles(allFiles.map((file) => file.file).toList()),
             ),
             const SizedBox(height: 10),
             ...allFiles.map(
@@ -92,13 +88,9 @@ class ReceiveOptionsPage extends StatelessWidget {
                   size: file.file.size.asReadableFileSize,
                   onToggle: (selected) {
                     if (selected) {
-                      ref
-                          .notifier(selectedReceivingFilesProvider)
-                          .select(file.file);
+                      ref.notifier(selectedReceivingFilesProvider).select(file.file);
                     } else {
-                      ref
-                          .notifier(selectedReceivingFilesProvider)
-                          .unselect(file.file.id);
+                      ref.notifier(selectedReceivingFilesProvider).unselect(file.file.id);
                     }
                   },
                   onRename: selection[file.file.id] == null
@@ -112,15 +104,65 @@ class ReceiveOptionsPage extends StatelessWidget {
                             ),
                           );
                           if (result != null) {
-                            ref
-                                .notifier(selectedReceivingFilesProvider)
-                                .rename(file.file.id, result);
+                            ref.notifier(selectedReceivingFilesProvider).rename(file.file.id, result);
                           }
                         },
                 ),
               ),
             ),
           ],
+        ),
+      ),
+      bottomNavigationBar: SafeArea(
+        top: false,
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surfaceContainerLow,
+            border: Border(
+              top: BorderSide(
+                color: Theme.of(context).colorScheme.outlineVariant.withOpacity(0.5),
+              ),
+            ),
+          ),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 920),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () {
+                        ref.notifier(serverProvider).declineFileRequest();
+                        context.pop();
+                      },
+                      icon: const Icon(Icons.close_rounded),
+                      label: Text(t.general.decline),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    flex: 2,
+                    child: FilledButton.icon(
+                      key: const Key('receive-options-accept'),
+                      onPressed: acceptDisabled
+                          ? null
+                          : () {
+                              ref.notifier(serverProvider).acceptFileRequest(
+                                    selection,
+                                  );
+                              context.pop();
+                            },
+                      icon: const Icon(Icons.download_done_rounded),
+                      label: Text(
+                        acceptDisabled ? _OptionsCopy.nothingSelected : _OptionsCopy.acceptCount(selectedCount),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ),
       ),
     );
@@ -265,8 +307,7 @@ class _GalleryCard extends StatelessWidget {
                 color: scheme.primaryContainer,
                 borderRadius: BorderRadius.circular(14),
               ),
-              child: Icon(Icons.photo_library_outlined,
-                  color: scheme.onPrimaryContainer),
+              child: Icon(Icons.photo_library_outlined, color: scheme.onPrimaryContainer),
             ),
             title: Text(_OptionsCopy.saveToGallery),
             subtitle: Text(_OptionsCopy.saveToGallerySubtitle),
@@ -426,9 +467,7 @@ class _ReceivingFileCard extends StatelessWidget {
             : t.general.unchanged;
 
     return LocalShareSurface(
-      style: selected
-          ? LocalShareSurfaceStyle.standard
-          : LocalShareSurfaceStyle.subtle,
+      style: selected ? LocalShareSurfaceStyle.standard : LocalShareSurfaceStyle.subtle,
       padding: const EdgeInsets.fromLTRB(14, 12, 8, 12),
       child: Row(
         children: [
@@ -483,21 +522,17 @@ abstract final class _OptionsCopy {
   static bool get _zh => LocalShareCopy.isChinese;
 
   static String get pageTitle => _zh ? '接收选项' : 'Receive options';
-  static String summary(int selected, int total) =>
-      _zh ? '将接收 $selected / $total 项' : '$selected of $total items selected';
-  static String selectedSize(String size) =>
-      _zh ? '预计保存 $size' : 'Estimated save size $size';
+  static String summary(int selected, int total) => _zh ? '将接收 $selected / $total 项' : '$selected of $total items selected';
+  static String selectedSize(String size) => _zh ? '预计保存 $size' : 'Estimated save size $size';
   static String get destination => _zh ? '保存位置' : 'Save location';
-  static String get destinationSubtitle =>
-      _zh ? '本次接收的文件将写入这里' : 'Files from this transfer are saved here';
+  static String get destinationSubtitle => _zh ? '本次接收的文件将写入这里' : 'Files from this transfer are saved here';
   static String get changeDestination => _zh ? '更改保存位置' : 'Change location';
   static String get saveToGallery => _zh ? '保存到系统相册' : 'Save to gallery';
-  static String get saveToGallerySubtitle => _zh
-      ? '照片和视频接收完成后可在相册中查看'
-      : 'Show received photos and videos in the gallery';
+  static String get saveToGallerySubtitle => _zh ? '照片和视频接收完成后可在相册中查看' : 'Show received photos and videos in the gallery';
   static String get files => _zh ? '本次文件' : 'Files';
-  static String get filesSubtitle =>
-      _zh ? '选择、跳过或重命名要接收的内容' : 'Select, skip, or rename incoming items';
+  static String get filesSubtitle => _zh ? '选择、跳过或重命名要接收的内容' : 'Select, skip, or rename incoming items';
   static String get quickActions => _zh ? '批量选择' : 'Quick actions';
   static String get rename => _zh ? '重命名' : 'Rename';
+  static String get nothingSelected => _zh ? '请至少选择一项' : 'Select at least one item';
+  static String acceptCount(int count) => _zh ? '接受并保存 $count 项' : 'Accept and save $count ${count == 1 ? 'item' : 'items'}';
 }

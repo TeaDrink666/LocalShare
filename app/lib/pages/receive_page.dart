@@ -47,7 +47,9 @@ class _ReceivePageState extends State<ReceivePage> with Refena {
     );
 
     if (vm.status == null && vm.message == null) {
-      return const Scaffold(body: SizedBox());
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
     }
 
     final favorite = ref.watch(
@@ -56,11 +58,6 @@ class _ReceivePageState extends State<ReceivePage> with Refena {
     final senderName = favorite?.alias ?? vm.sender.alias;
 
     return PopScope(
-      onPopInvokedWithResult: (didPop, result) {
-        if (didPop) {
-          vm.onDecline();
-        }
-      },
       canPop: true,
       child: Scaffold(
         body: LocalSharePageBackground(
@@ -77,8 +74,7 @@ class _ReceivePageState extends State<ReceivePage> with Refena {
                           mainAxisSize: MainAxisSize.min,
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            _PageHeading(
-                                message: vm.message, isLink: vm.isLink),
+                            _PageHeading(message: vm.message, isLink: vm.isLink),
                             const SizedBox(height: 18),
                             _SenderCard(
                               vm: vm,
@@ -201,15 +197,10 @@ class _SenderCard extends StatelessWidget {
                   runSpacing: 8,
                   children: [
                     _SenderBadge(
-                      label: vm.showFullIp
-                          ? vm.sender.ip
-                          : '#${vm.sender.ip.visualId}',
-                      onTap: () => context
-                          .redux(receivePageControllerProvider)
-                          .dispatch(SetShowFullIpAction(!vm.showFullIp)),
+                      label: vm.showFullIp ? vm.sender.ip : '#${vm.sender.ip.visualId}',
+                      onTap: () => context.redux(receivePageControllerProvider).dispatch(SetShowFullIpAction(!vm.showFullIp)),
                     ),
-                    if (vm.sender.deviceModel != null)
-                      _SenderBadge(label: vm.sender.deviceModel!),
+                    if (vm.sender.deviceModel != null) _SenderBadge(label: vm.sender.deviceModel!),
                   ],
                 ),
               ],
@@ -288,7 +279,7 @@ class _RequestCard extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final selectedFiles = context.watch(selectedReceivingFilesProvider);
 
-    return LocalShareSurface(
+    return LocalShareCard(
       padding: const EdgeInsets.all(20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -296,18 +287,14 @@ class _RequestCard extends StatelessWidget {
           Row(
             children: [
               Icon(
-                vm.message != null
-                    ? (vm.isLink ? Icons.language_rounded : Icons.notes_rounded)
-                    : Icons.folder_copy_outlined,
+                vm.message != null ? (vm.isLink ? Icons.language_rounded : Icons.notes_rounded) : Icons.folder_copy_outlined,
                 color: scheme.primary,
               ),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
                   vm.message != null
-                      ? (vm.isLink
-                          ? t.receivePage.subTitleLink
-                          : t.receivePage.subTitleMessage)
+                      ? (vm.isLink ? t.receivePage.subTitleLink : t.receivePage.subTitleMessage)
                       : t.receivePage.subTitle(n: vm.fileCount),
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
@@ -322,8 +309,7 @@ class _RequestCard extends StatelessWidget {
               decoration: BoxDecoration(
                 color: scheme.surfaceContainerHighest.withOpacity(0.52),
                 borderRadius: BorderRadius.circular(16),
-                border:
-                    Border.all(color: scheme.outlineVariant.withOpacity(0.5)),
+                border: Border.all(color: scheme.outlineVariant.withOpacity(0.5)),
               ),
               child: SingleChildScrollView(
                 child: SelectableText(
@@ -342,8 +328,7 @@ class _RequestCard extends StatelessWidget {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(Icons.fact_check_outlined,
-                      color: scheme.onPrimaryContainer),
+                  Icon(Icons.fact_check_outlined, color: scheme.onPrimaryContainer),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
@@ -364,8 +349,7 @@ class _RequestCard extends StatelessWidget {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(Icons.shield_outlined,
-                  size: 19, color: scheme.onSurfaceVariant),
+              Icon(Icons.shield_outlined, size: 19, color: scheme.onSurfaceVariant),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
@@ -395,8 +379,7 @@ class _Actions extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
 
     if (vm.message != null) {
-      return LocalShareSurface(
-        style: LocalShareSurfaceStyle.subtle,
+      return LocalShareCard(
         child: Wrap(
           spacing: 10,
           runSpacing: 10,
@@ -407,7 +390,7 @@ class _Actions extends StatelessWidget {
                 vm.onAccept();
                 context.pop();
               },
-              icon: const Icon(Icons.close_rounded),
+              icon: const Icon(Icons.check_rounded),
               label: Text(t.general.close),
             ),
             FilledButton.tonalIcon(
@@ -444,8 +427,7 @@ class _Actions extends StatelessWidget {
     }
 
     if (vm.status == SessionStatus.canceledBySender) {
-      return LocalShareSurface(
-        style: LocalShareSurfaceStyle.subtle,
+      return LocalShareCard(
         child: Column(
           children: [
             Icon(Icons.cancel_outlined, color: scheme.error, size: 34),
@@ -471,12 +453,10 @@ class _Actions extends StatelessWidget {
       );
     }
 
-    return LocalShareSurface(
-      style: LocalShareSurfaceStyle.subtle,
+    return LocalShareCard(
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final compact = constraints.maxWidth < 520 ||
-              MediaQuery.textScalerOf(context).scale(16) > 20;
+          final compact = constraints.maxWidth < 520 || MediaQuery.textScalerOf(context).scale(16) > 20;
           final options = OutlinedButton.icon(
             onPressed: () async {
               await context.push(() => const ReceiveOptionsPage());
@@ -543,14 +523,10 @@ abstract final class _ReceiveRequestCopy {
   static String get filesTitle => _zh ? '收到文件请求' : 'Incoming file request';
   static String get messageTitle => _zh ? '收到文字消息' : 'Incoming message';
   static String get linkTitle => _zh ? '收到网页链接' : 'Incoming link';
-  static String get pageSubtitle => _zh
-      ? '先核对发送设备和内容，再决定是否接收。'
-      : 'Check the sender and content before approving.';
+  static String get pageSubtitle => _zh ? '先核对发送设备和内容，再决定是否接收。' : 'Check the sender and content before approving.';
   static String get fromDevice => _zh ? '来自设备' : 'From device';
-  static String get securityHint => _zh
-      ? '未经你确认，文件不会写入当前设备。传输只在局域网内进行。'
-      : 'Files are not saved without your approval. The transfer stays on your LAN.';
-  static String selectedSummary(int selected, int total) => _zh
-      ? '已选择 $selected / $total 项。你可以在接收选项中查看、取消或重命名文件。'
-      : '$selected of $total selected. Open receive options to review, skip, or rename files.';
+  static String get securityHint =>
+      _zh ? '未经你确认，文件不会写入当前设备。传输只在局域网内进行。' : 'Files are not saved without your approval. The transfer stays on your LAN.';
+  static String selectedSummary(int selected, int total) =>
+      _zh ? '已选择 $selected / $total 项。你可以在接收选项中查看、取消或重命名文件。' : '$selected of $total selected. Open receive options to review, skip, or rename files.';
 }

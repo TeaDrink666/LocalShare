@@ -44,8 +44,7 @@ class LocalSendApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ref = context.ref;
-    final (themeMode, colorMode) = ref.watch(settingsProvider
-        .select((settings) => (settings.theme, settings.colorMode)));
+    final (themeMode, colorMode) = ref.watch(settingsProvider.select((settings) => (settings.theme, settings.colorMode)));
     final dynamicColors = ref.watch(dynamicColorsProvider);
     return TrayWatcher(
       child: WindowWatcher(
@@ -58,9 +57,7 @@ class LocalSendApp extends StatelessWidget {
               case AppLifecycleState.detached:
                 // The main isolate is only exited when all child isolates are exited.
                 // https://github.com/localsend/localsend/issues/1568
-                ref
-                    .redux(parentIsolateProvider)
-                    .dispatch(IsolateDisposeAction());
+                ref.redux(parentIsolateProvider).dispatch(IsolateDisposeAction());
                 break;
               default:
                 break;
@@ -75,12 +72,11 @@ class LocalSendApp extends StatelessWidget {
               debugShowCheckedModeBanner: false,
               theme: getTheme(colorMode, Brightness.light, dynamicColors),
               darkTheme: getTheme(colorMode, Brightness.dark, dynamicColors),
-              themeMode:
-                  colorMode == ColorMode.oled ? ThemeMode.dark : themeMode,
+              themeMode: colorMode == ColorMode.oled ? ThemeMode.dark : themeMode,
               navigatorKey: Routerino.navigatorKey,
               home: RouterinoHome(
                 builder: () => const HomePage(
-                  initialTab: HomeTab.send,
+                  initialTab: HomeTab.home,
                   appStart: true,
                 ),
               ),

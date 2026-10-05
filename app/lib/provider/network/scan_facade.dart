@@ -41,7 +41,7 @@ class StartSmartScan extends AsyncGlobalAction {
     // If no devices has been found, then switch to legacy discovery mode
     // which is purely HTTP/TCP based.
     final stillEmpty = ref.read(nearbyDevicesProvider).devices.isEmpty;
-    final stillInSendTab = ref.read(homePageControllerProvider).currentTab == HomeTab.send;
+    final stillInSendTab = {HomeTab.home, HomeTab.send}.contains(ref.read(homePageControllerProvider).currentTab);
     if (forceLegacy || (stillEmpty && stillInSendTab)) {
       final networkInterfaces = ref.read(localIpProvider).localIps.take(maxInterfaces).toList();
       if (networkInterfaces.isNotEmpty) {

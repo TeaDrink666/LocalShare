@@ -8,6 +8,7 @@ import 'package:localsend_app/pages/tabs/receive_tab_vm.dart';
 import 'package:localsend_app/pages/web_receive_page.dart';
 import 'package:localsend_app/provider/settings_provider.dart';
 import 'package:localsend_app/util/native/directories.dart';
+import 'package:localsend_app/widget/localshare_design/localshare_design.dart';
 import 'package:refena_flutter/refena_flutter.dart';
 import 'package:routerino/routerino.dart';
 
@@ -26,8 +27,7 @@ class ReceiveTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final vm = context.watch(receiveTabVmProvider);
-    final destination = context
-        .watch(settingsProvider.select((settings) => settings.destination));
+    final destination = context.watch(settingsProvider.select((settings) => settings.destination));
 
     return CustomScrollView(
       slivers: [
@@ -47,8 +47,7 @@ class ReceiveTab extends StatelessWidget {
                       const SizedBox(height: 12),
                       LayoutBuilder(
                         builder: (context, constraints) {
-                          final destinationSection =
-                              _DestinationSection(destination: destination);
+                          final destinationSection = _DestinationSection(destination: destination);
                           final quickSaveSection = _QuickSaveSection(vm: vm);
                           final webReceiveSection = const _WebReceiveSection();
                           final networkDetails = _NetworkDetails(vm: vm);
@@ -73,8 +72,7 @@ class ReceiveTab extends StatelessWidget {
                             children: [
                               Expanded(
                                 child: Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.stretch,
+                                  crossAxisAlignment: CrossAxisAlignment.stretch,
                                   children: [
                                     destinationSection,
                                     const SizedBox(height: 12),
@@ -85,8 +83,7 @@ class ReceiveTab extends StatelessWidget {
                               const SizedBox(width: 12),
                               Expanded(
                                 child: Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.stretch,
+                                  crossAxisAlignment: CrossAxisAlignment.stretch,
                                   children: [
                                     webReceiveSection,
                                     const SizedBox(height: 12),
@@ -151,13 +148,8 @@ class _DeviceSummary extends StatelessWidget {
     final alias = vm.serverState?.alias ?? vm.aliasSettings;
     final statusColor = isOnline ? scheme.primary : scheme.onSurfaceVariant;
 
-    return Container(
+    return LocalShareCard(
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: scheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: scheme.outlineVariant.withOpacity(0.72)),
-      ),
       child: Row(
         children: [
           Container(
@@ -192,9 +184,7 @@ class _DeviceSummary extends StatelessWidget {
                       width: 8,
                       height: 8,
                       decoration: BoxDecoration(
-                        color: isOnline
-                            ? statusColor
-                            : statusColor.withOpacity(0.5),
+                        color: isOnline ? statusColor : statusColor.withOpacity(0.5),
                         shape: BoxShape.circle,
                       ),
                     ),
@@ -230,9 +220,7 @@ class _DestinationSection extends StatelessWidget {
       title: t.settingsTab.receive.destination,
       trailing: TextButton(
         onPressed: () {
-          context
-              .redux(homePageControllerProvider)
-              .dispatch(ChangeTabAction(HomeTab.settings));
+          context.redux(homePageControllerProvider).dispatch(ChangeTabAction(HomeTab.settings));
         },
         child: Text(t.general.edit),
       ),
@@ -242,9 +230,7 @@ class _DestinationSection extends StatelessWidget {
           _DestinationPath(destination: destination),
           const SizedBox(height: 6),
           Text(
-            destination == null
-                ? _ReceiveCopy.defaultPathHint
-                : _ReceiveCopy.customPathHint,
+            destination == null ? _ReceiveCopy.defaultPathHint : _ReceiveCopy.customPathHint,
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
@@ -350,20 +336,17 @@ class _QuickSaveSection extends StatelessWidget {
               _QuickSaveChoice(
                 label: t.receiveTab.quickSave.off,
                 selected: selectedMode == _QuickSaveMode.off,
-                onSelected: () async =>
-                    _setQuickSaveMode(context, vm, _QuickSaveMode.off),
+                onSelected: () async => _setQuickSaveMode(context, vm, _QuickSaveMode.off),
               ),
               _QuickSaveChoice(
                 label: t.receiveTab.quickSave.favorites,
                 selected: selectedMode == _QuickSaveMode.favorites,
-                onSelected: () async =>
-                    _setQuickSaveMode(context, vm, _QuickSaveMode.favorites),
+                onSelected: () async => _setQuickSaveMode(context, vm, _QuickSaveMode.favorites),
               ),
               _QuickSaveChoice(
                 label: t.receiveTab.quickSave.on,
                 selected: selectedMode == _QuickSaveMode.on,
-                onSelected: () async =>
-                    _setQuickSaveMode(context, vm, _QuickSaveMode.on),
+                onSelected: () async => _setQuickSaveMode(context, vm, _QuickSaveMode.on),
               ),
             ],
           ),
@@ -452,8 +435,8 @@ class _NetworkDetails extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         color: scheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: scheme.outlineVariant.withOpacity(0.72)),
+        borderRadius: BorderRadius.circular(LocalShareRadii.large),
+        border: Border.all(color: scheme.outlineVariant.withOpacity(0.6)),
       ),
       clipBehavior: Clip.antiAlias,
       child: Column(
@@ -473,10 +456,9 @@ class _NetworkDetails extends StatelessWidget {
                     Expanded(
                       child: Text(
                         _ReceiveCopy.networkDetails,
-                        style:
-                            Theme.of(context).textTheme.titleMedium?.copyWith(
-                                  fontWeight: FontWeight.w700,
-                                ),
+                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
                       ),
                     ),
                     AnimatedRotation(
@@ -507,9 +489,7 @@ class _NetworkDetails extends StatelessWidget {
                                 : constraints.maxWidth >= 360
                                     ? 2
                                     : 1;
-                            final itemWidth =
-                                (constraints.maxWidth - gap * (columns - 1)) /
-                                    columns;
+                            final itemWidth = (constraints.maxWidth - gap * (columns - 1)) / columns;
 
                             return Wrap(
                               spacing: gap,
@@ -518,15 +498,12 @@ class _NetworkDetails extends StatelessWidget {
                                 _NetworkValue(
                                   width: itemWidth,
                                   label: t.receiveTab.infoBox.alias,
-                                  value:
-                                      vm.serverState?.alias ?? vm.aliasSettings,
+                                  value: vm.serverState?.alias ?? vm.aliasSettings,
                                 ),
                                 _NetworkValue(
                                   width: itemWidth,
                                   label: t.receiveTab.infoBox.ip,
-                                  value: vm.localIps.isEmpty
-                                      ? t.general.unknown
-                                      : vm.localIps.join('\n'),
+                                  value: vm.localIps.isEmpty ? t.general.unknown : vm.localIps.join('\n'),
                                 ),
                                 _NetworkValue(
                                   width: itemWidth,
@@ -609,7 +586,7 @@ class _SectionFrame extends StatelessWidget {
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: scheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(LocalShareRadii.large),
         border: Border.all(color: scheme.outlineVariant.withOpacity(0.72)),
       ),
       child: Column(
@@ -691,25 +668,13 @@ abstract final class _ReceiveCopy {
 
   static String get history => _isChinese ? '历史' : 'History';
   static String get networkDetails => _isChinese ? '网络详情' : 'Network details';
-  static String get ready =>
-      _isChinese ? '在线，可以接收文件' : 'Online and ready to receive';
-  static String get quickSaveSubtitle => _isChinese
-      ? '设置收到传输请求时是否需要确认。'
-      : 'Choose whether incoming transfers need approval.';
-  static String get quickSaveOffDescription =>
-      _isChinese ? '每次收到文件都先询问。' : 'Ask before saving every transfer.';
-  static String get quickSaveFavoritesDescription => _isChinese
-      ? '收藏设备自动接收，其他设备仍会询问。'
-      : 'Auto-save from favorites and ask for all other devices.';
-  static String get quickSaveOnDescription => _isChinese
-      ? '所有设备自动接收，仅建议在可信网络使用。'
-      : 'Auto-save from every device. Use only on a trusted network.';
-  static String get defaultDestinationResolving =>
-      _isChinese ? '正在确定系统下载目录…' : 'Resolving Downloads folder…';
-  static String get defaultDestinationUnavailable =>
-      _isChinese ? '无法确定默认保存目录' : 'Default save folder unavailable';
-  static String get defaultPathHint =>
-      _isChinese ? '系统默认保存位置' : 'System default save location';
-  static String get customPathHint =>
-      _isChinese ? '自定义保存位置' : 'Custom save location';
+  static String get ready => _isChinese ? '在线，可以接收文件' : 'Online and ready to receive';
+  static String get quickSaveSubtitle => _isChinese ? '设置收到传输请求时是否需要确认。' : 'Choose whether incoming transfers need approval.';
+  static String get quickSaveOffDescription => _isChinese ? '每次收到文件都先询问。' : 'Ask before saving every transfer.';
+  static String get quickSaveFavoritesDescription => _isChinese ? '收藏设备自动接收，其他设备仍会询问。' : 'Auto-save from favorites and ask for all other devices.';
+  static String get quickSaveOnDescription => _isChinese ? '所有设备自动接收，仅建议在可信网络使用。' : 'Auto-save from every device. Use only on a trusted network.';
+  static String get defaultDestinationResolving => _isChinese ? '正在确定系统下载目录…' : 'Resolving Downloads folder…';
+  static String get defaultDestinationUnavailable => _isChinese ? '无法确定默认保存目录' : 'Default save folder unavailable';
+  static String get defaultPathHint => _isChinese ? '系统默认保存位置' : 'System default save location';
+  static String get customPathHint => _isChinese ? '自定义保存位置' : 'Custom save location';
 }

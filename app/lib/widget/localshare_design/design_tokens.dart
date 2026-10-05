@@ -9,6 +9,7 @@ abstract final class LocalShareRadii {
   static const double medium = 12;
   static const double large = 18;
   static const double extraLarge = 24;
+  static const double hero = 28;
   static const double full = 999;
 }
 
@@ -119,28 +120,34 @@ class LocalShareDesignTheme extends ThemeExtension<LocalShareDesignTheme> {
     required this.surfaceRaised,
     required this.pageGradient,
     required this.brandGradient,
+    required this.heroGradient,
   });
 
-  factory LocalShareDesignTheme.from(ColorScheme scheme,
-      {bool isOled = false}) {
+  factory LocalShareDesignTheme.from(ColorScheme scheme, {bool isOled = false}) {
     final isDark = scheme.brightness == Brightness.dark;
     final background = scheme.surface;
     final primaryGlow = scheme.primary.withOpacity(isDark ? 0.09 : 0.07);
     final secondaryGlow = scheme.secondary.withOpacity(isDark ? 0.06 : 0.045);
 
     return LocalShareDesignTheme(
-      success: isDark
-          ? LocalSharePalette.darkSuccess
-          : LocalSharePalette.lightSuccess,
-      warning: isDark
-          ? LocalSharePalette.darkWarning
-          : LocalSharePalette.lightWarning,
+      success: isDark ? LocalSharePalette.darkSuccess : LocalSharePalette.lightSuccess,
+      warning: isDark ? LocalSharePalette.darkWarning : LocalSharePalette.lightWarning,
       info: isDark ? LocalSharePalette.darkInfo : LocalSharePalette.lightInfo,
       surfaceRaised: isOled
           ? Colors.black
           : isDark
               ? LocalSharePalette.darkSurfaceRaised
               : LocalSharePalette.lightSurfaceRaised,
+      heroGradient: LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: isOled
+            ? const <Color>[Color(0xFF10221F), Color(0xFF141B2E)]
+            : <Color>[
+                scheme.primary,
+                Color.lerp(scheme.primary, scheme.tertiary, 0.55)!,
+              ],
+      ),
       pageGradient: LinearGradient(
         begin: Alignment.topLeft,
         end: Alignment.bottomRight,
@@ -167,6 +174,7 @@ class LocalShareDesignTheme extends ThemeExtension<LocalShareDesignTheme> {
   final Color surfaceRaised;
   final LinearGradient pageGradient;
   final LinearGradient brandGradient;
+  final LinearGradient heroGradient;
 
   @override
   LocalShareDesignTheme copyWith({
@@ -176,6 +184,7 @@ class LocalShareDesignTheme extends ThemeExtension<LocalShareDesignTheme> {
     Color? surfaceRaised,
     LinearGradient? pageGradient,
     LinearGradient? brandGradient,
+    LinearGradient? heroGradient,
   }) {
     return LocalShareDesignTheme(
       success: success ?? this.success,
@@ -184,12 +193,12 @@ class LocalShareDesignTheme extends ThemeExtension<LocalShareDesignTheme> {
       surfaceRaised: surfaceRaised ?? this.surfaceRaised,
       pageGradient: pageGradient ?? this.pageGradient,
       brandGradient: brandGradient ?? this.brandGradient,
+      heroGradient: heroGradient ?? this.heroGradient,
     );
   }
 
   @override
-  LocalShareDesignTheme lerp(
-      covariant ThemeExtension<LocalShareDesignTheme>? other, double t) {
+  LocalShareDesignTheme lerp(covariant ThemeExtension<LocalShareDesignTheme>? other, double t) {
     if (other is! LocalShareDesignTheme) {
       return this;
     }
@@ -200,15 +209,14 @@ class LocalShareDesignTheme extends ThemeExtension<LocalShareDesignTheme> {
       info: Color.lerp(info, other.info, t)!,
       surfaceRaised: Color.lerp(surfaceRaised, other.surfaceRaised, t)!,
       pageGradient: LinearGradient.lerp(pageGradient, other.pageGradient, t)!,
-      brandGradient:
-          LinearGradient.lerp(brandGradient, other.brandGradient, t)!,
+      brandGradient: LinearGradient.lerp(brandGradient, other.brandGradient, t)!,
+      heroGradient: LinearGradient.lerp(heroGradient, other.heroGradient, t)!,
     );
   }
 }
 
 extension LocalShareDesignContext on BuildContext {
   LocalShareDesignTheme get localShareDesign {
-    return Theme.of(this).extension<LocalShareDesignTheme>() ??
-        LocalShareDesignTheme.from(Theme.of(this).colorScheme);
+    return Theme.of(this).extension<LocalShareDesignTheme>() ?? LocalShareDesignTheme.from(Theme.of(this).colorScheme);
   }
 }

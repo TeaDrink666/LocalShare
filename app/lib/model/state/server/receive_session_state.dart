@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:common/model/device.dart';
+import 'package:common/model/file_status.dart';
 import 'package:common/model/file_type.dart';
 import 'package:common/model/session_status.dart';
 import 'package:dart_mappable/dart_mappable.dart';
@@ -57,5 +58,28 @@ class ReceiveSessionState with ReceiveSessionStateMappable {
   /// "Save to gallery" is disabled for such requests.
   bool get containsDirectories {
     return files.values.any((f) => f.file.fileName.contains('/'));
+  }
+}
+
+/// Marks one file of a receive session as finished/failed.
+extension ReceiveSessionFileFinished on ReceiveSessionState {
+  ReceiveSessionState fileFinished({
+    required String fileId,
+    required FileStatus status,
+    required String? path,
+    required bool savedToGallery,
+    required String? errorMessage,
+  }) {
+    return copyWith(
+      files: {...files}..update(
+          fileId,
+          (file) => file.copyWith(
+            status: status,
+            path: path,
+            savedToGallery: savedToGallery,
+            errorMessage: errorMessage,
+          ),
+        ),
+    );
   }
 }

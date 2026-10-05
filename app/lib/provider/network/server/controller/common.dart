@@ -1,12 +1,10 @@
 import 'dart:io';
 
-import 'package:localsend_app/provider/network/server/server_utils.dart';
 import 'package:localsend_app/util/simple_server.dart';
 
 /// Responds with 401 or 429 if the pin is invalid or too many attempts.
 /// Returns true if the pin is correct, or if no pin is set.
 Future<bool> checkPin({
-  required ServerUtils server,
   required String? pin,
   required Map<String, int> pinAttempts,
   required HttpRequest request,

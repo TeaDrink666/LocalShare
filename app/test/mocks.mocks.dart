@@ -53,6 +53,66 @@ class MockPersistenceService extends _i1.Mock implements _i3.PersistenceService 
       ) as bool);
 
   @override
+  List<String> getTransferTasks() => (super.noSuchMethod(
+        Invocation.method(
+          #getTransferTasks,
+          [],
+        ),
+        returnValue: <String>[],
+        returnValueForMissingStub: <String>[],
+      ) as List<String>);
+
+  @override
+  _i4.Future<void> setTransferTasks(List<String>? tasks) => (super.noSuchMethod(
+        Invocation.method(
+          #setTransferTasks,
+          [tasks],
+        ),
+        returnValue: _i4.Future<void>.value(),
+        returnValueForMissingStub: _i4.Future<void>.value(),
+      ) as _i4.Future<void>);
+
+  @override
+  int getTaskConcurrency() => (super.noSuchMethod(
+        Invocation.method(
+          #getTaskConcurrency,
+          [],
+        ),
+        returnValue: 0,
+        returnValueForMissingStub: 0,
+      ) as int);
+
+  @override
+  _i4.Future<void> setTaskConcurrency(int? count) => (super.noSuchMethod(
+        Invocation.method(
+          #setTaskConcurrency,
+          [count],
+        ),
+        returnValue: _i4.Future<void>.value(),
+        returnValueForMissingStub: _i4.Future<void>.value(),
+      ) as _i4.Future<void>);
+
+  @override
+  int getTaskRetentionDays() => (super.noSuchMethod(
+        Invocation.method(
+          #getTaskRetentionDays,
+          [],
+        ),
+        returnValue: 0,
+        returnValueForMissingStub: 0,
+      ) as int);
+
+  @override
+  _i4.Future<void> setTaskRetentionDays(int? days) => (super.noSuchMethod(
+        Invocation.method(
+          #setTaskRetentionDays,
+          [days],
+        ),
+        returnValue: _i4.Future<void>.value(),
+        returnValueForMissingStub: _i4.Future<void>.value(),
+      ) as _i4.Future<void>);
+
+  @override
   bool isPortableMode() => (super.noSuchMethod(
         Invocation.method(
           #isPortableMode,

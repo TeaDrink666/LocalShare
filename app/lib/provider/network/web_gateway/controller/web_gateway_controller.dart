@@ -9,8 +9,9 @@ import 'package:common/model/dto/info_dto.dart';
 import 'package:common/model/dto/receive_request_response_dto.dart';
 import 'package:common/model/file_type.dart';
 import 'package:common/util/stream.dart';
+import 'package:localsend_app/features/tasks/task_destination.dart';
+import 'package:localsend_app/features/tasks/transfer_task.dart';
 import 'package:localsend_app/features/web_transfer/streaming_zip_writer.dart';
-import 'package:localsend_app/features/web_transfer/windows_safe_archive_path.dart';
 import 'package:localsend_app/gen/assets.gen.dart';
 import 'package:localsend_app/gen/strings.g.dart';
 import 'package:localsend_app/model/cross_file.dart';
@@ -19,8 +20,10 @@ import 'package:localsend_app/model/state/send/web/web_send_session.dart';
 import 'package:localsend_app/model/state/send/web/web_send_state.dart';
 import 'package:localsend_app/provider/device_info_provider.dart';
 import 'package:localsend_app/provider/network/server/controller/common.dart';
-import 'package:localsend_app/provider/network/server/server_utils.dart';
+import 'package:localsend_app/provider/network/web_gateway/web_gateway_utils.dart';
+import 'package:localsend_app/provider/progress_provider.dart';
 import 'package:localsend_app/provider/settings_provider.dart';
+import 'package:localsend_app/provider/task_provider.dart';
 import 'package:localsend_app/util/byte_stream_slice.dart';
 import 'package:localsend_app/util/http_byte_range.dart';
 import 'package:localsend_app/util/simple_server.dart';
@@ -31,13 +34,15 @@ const _uuid = Uuid();
 const _downloadAllRoute = '/api/localsend/v2/download-all';
 const _downloadAllFileName = 'LocalShare-files.zip';
 
-/// Handles all requests for sending files.
-class SendController {
-  final ServerUtils server;
+/// Handles the web download (app -> browser) routes on the independent web
+/// gateway listener.
+class WebGatewayController {
+  final WebGatewayUtils gateway;
   final UriContent _uriContent;
+  final _downloadTasks = <String>{};
 
-  SendController(
-    this.server, {
+  WebGatewayController(
+    this.gateway, {
     UriContent? uriContent,
   }) : _uriContent = uriContent ?? UriContent();
 
@@ -48,7 +53,7 @@ class SendController {
     required String fingerprint,
   }) {
     router.get('/', (HttpRequest request) async {
-      final state = server.getState();
+      final state = gateway.getState();
       if (state.webSendState == null) {
         // There is no web send state
         return await request.respondAsset(403, Assets.web.error403);
@@ -58,22 +63,20 @@ class SendController {
     });
 
     router.get('/main.js', (HttpRequest request) async {
-      final state = server.getState();
+      final state = gateway.getState();
       if (state.webSendState == null) {
         // There is no web send state
         return await request.respondAsset(403, Assets.web.error403);
       }
 
-      return await request.respondAsset(
-          200, Assets.web.main, 'text/javascript; charset=utf-8');
+      return await request.respondAsset(200, Assets.web.main, 'text/javascript; charset=utf-8');
     });
 
     router.get('/i18n.json', (HttpRequest request) async {
-      final state = server.getState();
+      final state = gateway.getState();
       if (state.webSendState == null) {
         // There is no web send state
-        return await request.respondJson(403,
-            message: 'Web send not initialized.');
+        return await request.respondJson(403, message: 'Web send not initialized.');
       }
 
       return await request.respondJson(200, body: {
@@ -89,7 +92,7 @@ class SendController {
     });
 
     router.post(ApiRoute.prepareDownload.v2, (HttpRequest request) async {
-      final state = server.getState();
+      final state = gateway.getState();
       if (state.webSendState == null) {
         // There is no web send state
         return request.respondJson(403, message: 'Web send not initialized.');
@@ -98,12 +101,9 @@ class SendController {
       final requestSessionId = request.uri.queryParameters['sessionId'];
       if (requestSessionId != null) {
         // Check if the user already has permission
-        final session =
-            server.getState().webSendState?.sessions[requestSessionId];
-        if (session != null &&
-            session.responseHandler == null &&
-            session.ip == request.ip) {
-          final deviceInfo = server.ref.read(deviceInfoProvider);
+        final session = gateway.getState().webSendState?.sessions[requestSessionId];
+        if (session != null && session.responseHandler == null && session.ip == request.ip) {
+          final deviceInfo = gateway.ref.read(deviceInfoProvider);
           return await request.respondJson(200,
               body: ReceiveRequestResponseDto(
                 info: InfoDto(
@@ -116,15 +116,13 @@ class SendController {
                 ),
                 sessionId: session.sessionId,
                 files: {
-                  for (final entry in state.webSendState!.files.entries)
-                    entry.key: entry.value.file,
+                  for (final entry in state.webSendState!.files.entries) entry.key: entry.value.file,
                 },
               ).toJson());
         }
       }
 
       final pinCorrect = await checkPin(
-        server: server,
         pin: state.webSendState!.pin,
         pinAttempts: state.webSendState!.pinAttempts,
         request: request,
@@ -135,7 +133,7 @@ class SendController {
 
       final streamController = StreamController<bool>();
       final sessionId = request.ip;
-      server.setState(
+      gateway.setState(
         (oldState) => oldState!.copyWith(
           webSendState: oldState.webSendState!.copyWith(
             sessions: {
@@ -151,39 +149,35 @@ class SendController {
         ),
       );
 
-      final accepted = state.webSendState?.autoAccept == true ||
-          await streamController.stream.first;
+      final accepted = state.webSendState?.autoAccept == true || await streamController.stream.first;
       if (!accepted) {
         // user rejected the file transfer
-        server.setState(
+        gateway.setState(
           (oldState) => oldState!.copyWith(
             webSendState: oldState.webSendState!.copyWith(
               sessions: {
                 for (final entry in oldState.webSendState!.sessions.entries)
-                  if (entry.key != sessionId)
-                    entry.key: entry.value, // remove session
+                  if (entry.key != sessionId) entry.key: entry.value, // remove session
               },
             ),
           ),
         );
-        return await request.respondJson(403,
-            message: 'File transfer rejected.');
+        return await request.respondJson(403, message: 'File transfer rejected.');
       }
 
-      server.setState(
+      gateway.setState(
         (oldState) => oldState!.copyWith(
           webSendState: oldState.webSendState!.updateSession(
             sessionId: sessionId,
             update: (oldSession) {
               return oldSession.copyWith(
-                responseHandler:
-                    null, // this indicates that the session is active
+                responseHandler: null, // this indicates that the session is active
               );
             },
           ),
         ),
       );
-      final deviceInfo = server.ref.read(deviceInfoProvider);
+      final deviceInfo = gateway.ref.read(deviceInfoProvider);
       return await request.respondJson(200,
           body: ReceiveRequestResponseDto(
             info: InfoDto(
@@ -196,8 +190,7 @@ class SendController {
             ),
             sessionId: sessionId,
             files: {
-              for (final entry in state.webSendState!.files.entries)
-                entry.key: entry.value.file,
+              for (final entry in state.webSendState!.files.entries) entry.key: entry.value.file,
             },
           ).toJson());
     });
@@ -223,8 +216,7 @@ class SendController {
         return await request.respondJson(403, message: 'Invalid fileId.');
       }
 
-      final fileName = file.file.fileName
-          .replaceAll('/', '-'); // File name may be inside directories
+      final fileName = file.file.fileName.split('/').last;
       final _WebDownloadSource source;
       try {
         source = await _createDownloadSource(file);
@@ -290,13 +282,7 @@ class SendController {
           );
       }
 
-      final (streamController, subscription) = source.open(range).digested();
-      try {
-        await response.addStream(streamController.stream);
-      } finally {
-        await subscription.cancel();
-        await response.close();
-      }
+      await _sendTask(request, source.open(range), name: file.file.fileName, size: range?.contentLength ?? source.length ?? file.file.size);
     });
 
     router.get(_downloadAllRoute, (HttpRequest request) async {
@@ -346,26 +332,76 @@ class SendController {
         ..set(HttpHeaders.acceptRangesHeader, 'none')
         ..set(HttpHeaders.cacheControlHeader, 'no-store');
 
-      final (streamController, subscription) =
-          const StreamingZipWriter().write(archiveEntries).digested();
-      try {
-        await response.addStream(streamController.stream);
-      } finally {
-        await subscription.cancel();
-        await response.close();
-      }
+      await _sendTask(request, const StreamingZipWriter().write(archiveEntries),
+          name: _downloadAllFileName, size: archiveEntries.fold<int>(0, (sum, entry) => sum + entry.sizeBytes));
     });
+  }
+
+  Future<void> _sendTask(HttpRequest request, Stream<List<int>> bytes, {required String name, required int size}) async {
+    final id = _uuid.v4();
+    final manager = gateway.ref.notifier(taskProvider);
+    _downloadTasks.add(id);
+    manager.put(TransferTask(
+        id: id,
+        kind: TransferTaskKind.send,
+        peer: 'Browser ${request.ip}',
+        createdAt: DateTime.now().millisecondsSinceEpoch,
+        stage: TransferTaskStage.queued,
+        files: [
+          {'id': 'download', 'name': name, 'size': size, 'status': 'queue'}
+        ]));
+    StreamSubscription<List<int>>? subscription;
+    manager.cancellations[id] = () {
+      manager.queue.release(id);
+      unawaited(subscription?.cancel());
+      unawaited(request.response.close().then<void>((_) {}, onError: (Object _, StackTrace __) {}));
+    };
+    try {
+      if (!await manager.queue.acquire(id)) return;
+      manager.update(id, TransferTaskStage.running);
+      var sent = 0;
+      final (controller, activeSubscription) = bytes.map((chunk) {
+        if (manager.state.tasks[id]?.stage == TransferTaskStage.canceled) {
+          throw StateError('Task canceled');
+        }
+        sent += chunk.length;
+        gateway.ref.notifier(progressProvider).setProgress(sessionId: id, fileId: 'download', progress: size > 0 ? (sent / size).clamp(0, 1) : 0);
+        return chunk;
+      }).digested();
+      subscription = activeSubscription;
+      await request.response.addStream(controller.stream);
+      await request.response.close();
+      if (manager.state.tasks[id]?.stage != TransferTaskStage.canceled) {
+        manager.checkpoint(id, 'download', size);
+        manager.update(id, TransferTaskStage.completed);
+      }
+    } catch (error) {
+      if (manager.state.tasks[id]?.stage != TransferTaskStage.canceled) {
+        manager.update(id, TransferTaskStage.failed, error: error.toString());
+      }
+    } finally {
+      await subscription?.cancel();
+      manager.queue.release(id);
+      _downloadTasks.remove(id);
+      manager.cancellations.remove(id);
+    }
+  }
+
+  void cancelDownloads() {
+    if (_downloadTasks.isEmpty) return;
+    final manager = gateway.ref.notifier(taskProvider);
+    for (final id in _downloadTasks.toList()) {
+      manager.cancel(id);
+    }
   }
 
   WebSendState? _authorizedWebSendState(
     HttpRequest request,
     String sessionId,
   ) {
-    final webSendState = server.getState().webSendState;
+    final webSendState = gateway.getState().webSendState;
     final session = webSendState?.sessions[sessionId];
-    if (session == null ||
-        session.responseHandler != null ||
-        session.ip != request.ip) {
+    if (session == null || session.responseHandler != null || session.ip != request.ip) {
       return null;
     }
     return webSendState;
@@ -374,14 +410,7 @@ class SendController {
   Future<List<StreamingZipEntry>> _createArchiveEntries(
     WebSendState webSendState,
   ) async {
-    final safePaths = createWindowsSafeArchivePaths(
-      webSendState.files.entries.map(
-        (entry) => ArchivePathSource(
-          id: entry.key,
-          relativePath: entry.value.file.fileName,
-        ),
-      ),
-    );
+    validateTaskPaths(webSendState.files.values.map((file) => file.file.fileName));
     final archiveEntries = <StreamingZipEntry>[];
     for (final stateEntry in webSendState.files.entries) {
       final webFile = stateEntry.value;
@@ -392,7 +421,7 @@ class SendController {
       }
       archiveEntries.add(
         StreamingZipEntry(
-          name: safePaths[stateEntry.key]!,
+          name: webFile.file.fileName,
           sizeBytes: sizeBytes,
           modifiedTime: webFile.file.metadata?.lastModified,
           open: () => source.open(null),
@@ -422,8 +451,7 @@ class SendController {
     if (path.startsWith('content://')) {
       final uri = Uri.parse(path);
       final reportedLength = await _uriContent.getContentLength(uri);
-      final length =
-          reportedLength != null && reportedLength >= 0 ? reportedLength : null;
+      final length = reportedLength != null && reportedLength >= 0 ? reportedLength : null;
       return _WebDownloadSource(
         length: length,
         supportsRanges: length != null,
@@ -468,10 +496,8 @@ class SendController {
               size: file.size,
               fileType: file.fileType,
               hash: null,
-              preview: files.first.fileType == FileType.text &&
-                      files.first.bytes != null
-                  ? utf8.decode(files.first
-                      .bytes!) // send simple message by embedding it into the preview
+              preview: files.first.fileType == FileType.text && files.first.bytes != null
+                  ? utf8.decode(files.first.bytes!) // send simple message by embedding it into the preview
                   : null,
               metadata: file.lastModified != null || file.lastAccessed != null
                   ? FileMetadata(
@@ -487,12 +513,12 @@ class SendController {
           ),
         );
       }))),
-      autoAccept: server.ref.read(settingsProvider).shareViaLinkAutoAccept,
+      autoAccept: gateway.ref.read(settingsProvider).shareViaLinkAutoAccept,
       pin: null,
       pinAttempts: {},
     );
 
-    server.setState(
+    gateway.setState(
       (oldState) => oldState?.copyWith(
         webSendState: webSendState,
       ),
@@ -508,8 +534,7 @@ class SendController {
   }
 
   void _respondRequest(String sessionId, bool accepted) {
-    final controller =
-        server.getState().webSendState?.sessions[sessionId]?.responseHandler;
+    final controller = gateway.getState().webSendState?.sessions[sessionId]?.responseHandler;
     if (controller == null) {
       return;
     }
@@ -536,8 +561,7 @@ class _UnknownArchiveSourceSizeException implements Exception {
 
   final String fileName;
 
-  String get message =>
-      'Cannot archive "$fileName" because its size is unknown.';
+  String get message => 'Cannot archive "$fileName" because its size is unknown.';
 }
 
 extension on WebSendState {

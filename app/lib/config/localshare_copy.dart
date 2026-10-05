@@ -62,6 +62,14 @@ abstract final class LocalShareCopy {
   static String get waitingForBrowser => _isChinese ? '等待浏览器连接' : 'Waiting for a browser';
   static String get webReceiveSecurity =>
       _isChinese ? '文件仍会经过原有的接收确认流程，未经同意不会写入设备。' : 'Files still go through the normal approval flow and are never saved without your consent.';
+  static String get webReceiveRequestTitle => _isChinese ? '收到浏览器上传请求' : 'Incoming browser upload';
+  static String get webReceiveRequestHint =>
+      _isChinese ? '文件会保存到这台设备的接收目录。确认前请先在浏览器端核对要发送的内容。' : 'Files are saved to this device\'s receive folder. Check the browser before approving.';
+  static String get webReceiveProgressTitle => _isChinese ? '正在接收浏览器文件' : 'Receiving files from browser';
+  static String get webReceiveStopTitle => _isChinese ? '关闭网页接收？' : 'Stop web receiving?';
+  static String get webReceiveStopMessage =>
+      _isChinese ? '当前有浏览器正在上传文件。关闭后接收会话会中断。' : 'A browser is uploading right now. Closing interrupts the receive session.';
+  static String get webReceiveStop => _isChinese ? '关闭并中断' : 'Stop and interrupt';
   static String get planned => _isChinese ? '开发中' : 'In development';
   static String get selectFiles => _isChinese ? '选择文件' : 'Select files';
   static String get createLink => _isChinese ? '生成网页链接' : 'Create web link';
@@ -89,7 +97,7 @@ abstract final class LocalShareCopy {
       _isChinese ? '生成局域网链接或二维码，电脑无需安装软件' : 'Create a LAN link or QR code; no app is required on the computer';
   static String get startOnAndroid =>
       _isChinese ? '请在 Android 手机上发起备份，Windows 会作为接收端。' : 'Start the backup on Android; Windows will act as the receiver.';
-  static String get goToReceive => _isChinese ? '进入接收页' : 'Open receive page';
+  static String get goToReceive => _isChinese ? '查看接收任务' : 'View incoming tasks';
 
   static String get backupTarget => _isChinese ? '备份目标' : 'Backup target';
   static String get backupTargetDescription =>
@@ -105,6 +113,7 @@ abstract final class LocalShareCopy {
   static String get videos => _isChinese ? '视频' : 'Videos';
   static String get scanForChanges => _isChinese ? '扫描新增内容' : 'Scan for new items';
   static String scanningItems(int count) => _isChinese ? '正在扫描，已发现 $count 项' : 'Scanning · $count items found';
+  static String scanCompleted(int count) => _isChinese ? '扫描完成，发现 $count 项新增内容' : 'Scan finished · $count ${count == 1 ? 'item' : 'items'} found';
   static String get mediaPermissionDenied =>
       _isChinese ? '需要照片和视频读取权限才能建立备份清单。请授权后重试。' : 'Photo and video read access is required to build a backup inventory.';
   static String get limitedMediaAccess =>
@@ -130,6 +139,9 @@ abstract final class LocalShareCopy {
       : '$count ${count == 1 ? 'item has' : 'items have'} no durable Windows receipt yet. Select the nearby computer to resume; verified items are recorded automatically.';
   static String get confirmSaved => _isChinese ? '确认电脑已保存' : 'Confirm files are saved';
   static String get discardPending => _isChinese ? '取消这批记录' : 'Discard pending batch';
+  static String get discardPendingMessage => _isChinese
+      ? '取消后这批待确认记录将被清除，文件不会自动删除，但下次扫描会重新发现它们。'
+      : 'Discarding clears this pending batch. Files are not deleted, but the next scan will rediscover them.';
   static String get pendingBatchChanged => _isChinese
       ? '部分照片或视频在准备后发生了变化。请取消这批记录，然后重新扫描。'
       : 'Some photos or videos changed after this batch was prepared. Discard the batch and scan again.';
@@ -146,9 +158,12 @@ abstract final class LocalShareCopy {
   static String get confirmationTargetComputer => _isChinese ? '目标电脑' : 'Target computer';
   static String get confirmationItemCount => _isChinese ? '项目数' : 'Items';
   static String get confirmationTotalSize => _isChinese ? '总大小' : 'Total size';
+  static String get confirmationSelectAll => _isChinese ? '全选' : 'Select all';
+  static String confirmSelected(int count) => _isChinese ? '确认所选 $count 项' : 'Confirm selected ($count)';
   static String get savingBackupState => _isChinese ? '正在保存备份状态，请稍候…' : 'Saving backup status. Please wait…';
   static String get confirm => _isChinese ? '确认' : 'Confirm';
   static String confirmedItems(int count) => _isChinese ? '已确认 $count 项备份' : 'Confirmed $count backed-up items';
+  static String failedItemCount(int count) => _isChinese ? '失败 $count 项' : '$count ${count == 1 ? 'failed item' : 'failed items'}';
   static String get lastConfirmed => _isChinese ? '上次确认' : 'Last confirmed';
   static String get neverConfirmed => _isChinese ? '尚未备份' : 'No backup yet';
   static String get preparingBackup => _isChinese ? '正在准备备份清单…' : 'Preparing backup manifest…';

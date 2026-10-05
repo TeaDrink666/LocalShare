@@ -12,3 +12,6 @@
 .fvm/
 /LocalShare/
 /dist/
+
+# Local Android signing keys, passwords, and configuration
+/.signing/

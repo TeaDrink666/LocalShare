@@ -93,6 +93,21 @@ final persistenceProvider = Provider<PersistenceService>((ref) {
 
 /// This service abstracts the persistence layer.
 class PersistenceService {
+  List<String> getTransferTasks() => _prefs.getStringList('localshare_tasks') ?? [];
+  Future<void> setTransferTasks(List<String> tasks) async {
+    await _prefs.setStringList('localshare_tasks', tasks);
+  }
+
+  int getTaskConcurrency() => (_prefs.getInt('localshare_task_concurrency') ?? 2).clamp(1, 8);
+  Future<void> setTaskConcurrency(int count) async {
+    await _prefs.setInt('localshare_task_concurrency', count.clamp(1, 8));
+  }
+
+  int getTaskRetentionDays() => _prefs.getInt('localshare_task_retention_days') ?? 30;
+  Future<void> setTaskRetentionDays(int days) async {
+    await _prefs.setInt('localshare_task_retention_days', days);
+  }
+
   final SharedPreferences _prefs;
   final bool isFirstAppStart;
 

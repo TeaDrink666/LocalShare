@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
+import 'package:localsend_app/util/native/publish_file.dart';
 import 'package:path/path.dart' as p;
 
 /// The result of a file that was completely written, verified, and committed.
@@ -101,8 +102,7 @@ final class BackupFileWriter {
           actualSize: actualSize,
         );
       }
-      if (normalizedExpectedSha256 != null &&
-          actualSha256 != normalizedExpectedSha256) {
+      if (normalizedExpectedSha256 != null && actualSha256 != normalizedExpectedSha256) {
         throw BackupFileHashMismatchException(
           expectedSha256: normalizedExpectedSha256,
           actualSha256: actualSha256,
@@ -120,7 +120,7 @@ final class BackupFileWriter {
       // during that await. File.rename replaces existing files on some
       // platforms, so this final guard is required.
       await _ensureDestinationDoesNotExist(destination);
-      final committed = await temporary.rename(finalPath);
+      final committed = await publishFileWithoutReplacing(temporary, finalPath);
 
       return BackupFileWriteResult(
         path: committed.path,
@@ -161,8 +161,7 @@ final class BackupFileWriter {
 
 /// Thrown when committing would replace an existing file, link, or directory.
 final class BackupFileAlreadyExistsException extends FileSystemException {
-  BackupFileAlreadyExistsException(String path)
-      : super('Backup destination already exists', path);
+  BackupFileAlreadyExistsException(String path) : super('Backup destination already exists', path);
 }
 
 /// Thrown when the sender's declared byte length does not match the stream.
@@ -233,8 +232,7 @@ void _validateArguments({
     throw ArgumentError.value(finalPath, 'finalPath', 'Must not be empty');
   }
   if (expectedSize < 0) {
-    throw RangeError.value(
-        expectedSize, 'expectedSize', 'Must not be negative');
+    throw RangeError.value(expectedSize, 'expectedSize', 'Must not be negative');
   }
   if (batchId.trim().isEmpty) {
     throw ArgumentError.value(batchId, 'batchId', 'Must not be empty');
@@ -242,8 +240,7 @@ void _validateArguments({
   if (mediaKey.trim().isEmpty) {
     throw ArgumentError.value(mediaKey, 'mediaKey', 'Must not be empty');
   }
-  if (expectedSha256 != null &&
-      !RegExp(r'^[0-9a-fA-F]{64}$').hasMatch(expectedSha256)) {
+  if (expectedSha256 != null && !RegExp(r'^[0-9a-fA-F]{64}$').hasMatch(expectedSha256)) {
     throw ArgumentError.value(
       expectedSha256,
       'expectedSha256',

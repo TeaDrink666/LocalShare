@@ -16,7 +16,7 @@ import 'package:localsend_app/util/native/platform_check.dart';
 import 'package:localsend_app/widget/dialogs/file_info_dialog.dart';
 import 'package:localsend_app/widget/dialogs/history_clear_dialog.dart';
 import 'package:localsend_app/widget/file_thumbnail.dart';
-import 'package:localsend_app/widget/localshare_design/localshare_page_background.dart';
+import 'package:localsend_app/widget/localshare_design/localshare_design.dart';
 import 'package:path/path.dart' as path;
 import 'package:refena_flutter/refena_flutter.dart';
 import 'package:routerino/routerino.dart';
@@ -30,11 +30,9 @@ enum _EntryOption {
   String get label {
     return switch (this) {
       _EntryOption.open => t.receiveHistoryPage.entryActions.open,
-      _EntryOption.showInFolder =>
-        t.receiveHistoryPage.entryActions.showInFolder,
+      _EntryOption.showInFolder => t.receiveHistoryPage.entryActions.showInFolder,
       _EntryOption.info => t.receiveHistoryPage.entryActions.info,
-      _EntryOption.delete =>
-        t.receiveHistoryPage.entryActions.deleteFromHistory,
+      _EntryOption.delete => t.receiveHistoryPage.entryActions.deleteFromHistory,
     };
   }
 
@@ -64,8 +62,7 @@ class ReceiveHistoryPage extends StatelessWidget {
         context,
         entry.fileType,
         entry.path!,
-        onDeleteTap: () =>
-            dispatcher.dispatchAsync(RemoveHistoryEntryAction(entry.id)),
+        onDeleteTap: () => dispatcher.dispatchAsync(RemoveHistoryEntryAction(entry.id)),
       );
     }
   }
@@ -73,8 +70,7 @@ class ReceiveHistoryPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final entries = context.watch(receiveHistoryProvider);
-    final totalBytes =
-        entries.fold<int>(0, (sum, entry) => sum + entry.fileSize);
+    final totalBytes = entries.fold<int>(0, (sum, entry) => sum + entry.fileSize);
 
     return Scaffold(
       appBar: AppBar(
@@ -100,10 +96,7 @@ class ReceiveHistoryPage extends StatelessWidget {
                                 ? null
                                 : () async {
                                     // ignore: use_build_context_synchronously
-                                    final destination = context
-                                            .read(settingsProvider)
-                                            .destination ??
-                                        await getDefaultDestinationDirectory();
+                                    final destination = context.read(settingsProvider).destination ?? await getDefaultDestinationDirectory();
                                     await openFolder(folderPath: destination);
                                   },
                             onClear: entries.isEmpty
@@ -111,14 +104,11 @@ class ReceiveHistoryPage extends StatelessWidget {
                                 : () async {
                                     final result = await showDialog(
                                       context: context,
-                                      builder: (_) =>
-                                          const HistoryClearDialog(),
+                                      builder: (_) => const HistoryClearDialog(),
                                     );
 
                                     if (context.mounted && result == true) {
-                                      await context
-                                          .redux(receiveHistoryProvider)
-                                          .dispatchAsync(
+                                      await context.redux(receiveHistoryProvider).dispatchAsync(
                                             RemoveAllHistoryEntriesAction(),
                                           );
                                     }
@@ -175,10 +165,8 @@ class ReceiveHistoryPage extends StatelessWidget {
                                       case _EntryOption.showInFolder:
                                         if (entry.path != null) {
                                           await openFolder(
-                                            folderPath:
-                                                File(entry.path!).parent.path,
-                                            fileName:
-                                                path.basename(entry.path!),
+                                            folderPath: File(entry.path!).parent.path,
+                                            fileName: path.basename(entry.path!),
                                           );
                                         }
                                         break;
@@ -186,18 +174,45 @@ class ReceiveHistoryPage extends StatelessWidget {
                                         // ignore: use_build_context_synchronously
                                         await showDialog(
                                           context: context,
-                                          builder: (_) =>
-                                              FileInfoDialog(entry: entry),
+                                          builder: (_) => FileInfoDialog(entry: entry),
                                         );
                                         break;
                                       case _EntryOption.delete:
-                                        // ignore: use_build_context_synchronously
-                                        await context
-                                            .redux(receiveHistoryProvider)
-                                            .dispatchAsync(
-                                              RemoveHistoryEntryAction(
-                                                  entry.id),
-                                            );
+                                        final confirmed = await showDialog<bool>(
+                                          context: context,
+                                          builder: (dialogContext) => AlertDialog(
+                                            icon: Icon(
+                                              Icons.delete_outline_rounded,
+                                              color: Theme.of(dialogContext).colorScheme.error,
+                                              size: 32,
+                                            ),
+                                            title: Text(
+                                              _HistoryCopy.deleteEntryTitle,
+                                            ),
+                                            content: Text(
+                                              _HistoryCopy.deleteEntryMessage(entry.fileName),
+                                            ),
+                                            actions: [
+                                              TextButton(
+                                                onPressed: () => Navigator.of(dialogContext).pop(false),
+                                                child: Text(t.general.cancel),
+                                              ),
+                                              FilledButton(
+                                                style: FilledButton.styleFrom(
+                                                  backgroundColor: Theme.of(dialogContext).colorScheme.error,
+                                                  foregroundColor: Theme.of(dialogContext).colorScheme.onError,
+                                                ),
+                                                onPressed: () => Navigator.of(dialogContext).pop(true),
+                                                child: Text(t.general.delete),
+                                              ),
+                                            ],
+                                          ),
+                                        );
+                                        if (confirmed == true && context.mounted) {
+                                          await context.redux(receiveHistoryProvider).dispatchAsync(
+                                                RemoveHistoryEntryAction(entry.id),
+                                              );
+                                        }
                                         break;
                                     }
                                   },
@@ -252,7 +267,7 @@ class _HistorySummary extends StatelessWidget {
             )!,
           ],
         ),
-        borderRadius: BorderRadius.circular(28),
+        borderRadius: BorderRadius.circular(LocalShareRadii.hero),
         border: Border.all(color: scheme.primary.withOpacity(0.14)),
       ),
       child: Column(
@@ -266,7 +281,7 @@ class _HistorySummary extends StatelessWidget {
                 height: 50,
                 decoration: BoxDecoration(
                   color: scheme.surface.withOpacity(0.7),
-                  borderRadius: BorderRadius.circular(17),
+                  borderRadius: BorderRadius.circular(LocalShareRadii.medium),
                 ),
                 child: Icon(
                   Icons.history_rounded,
@@ -483,9 +498,7 @@ class _HistoryEntryCard extends StatelessWidget {
                         ),
                       ],
                     ),
-                    if (entry.isMessage ||
-                        entry.savedToGallery ||
-                        entry.path == null) ...[
+                    if (entry.isMessage || entry.savedToGallery || entry.path == null) ...[
                       const SizedBox(height: 9),
                       _EntryState(entry: entry),
                     ],
@@ -563,17 +576,9 @@ class _EntryState extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final (icon, label, color) = entry.isMessage
-        ? (
-            Icons.chat_bubble_outline_rounded,
-            _HistoryCopy.message,
-            scheme.primary
-          )
+        ? (Icons.chat_bubble_outline_rounded, _HistoryCopy.message, scheme.primary)
         : entry.savedToGallery
-            ? (
-                Icons.photo_library_outlined,
-                _HistoryCopy.savedToGallery,
-                scheme.tertiary
-              )
+            ? (Icons.photo_library_outlined, _HistoryCopy.savedToGallery, scheme.tertiary)
             : (Icons.link_off_rounded, _HistoryCopy.unavailable, scheme.error);
 
     return Row(
@@ -653,19 +658,18 @@ abstract final class _HistoryCopy {
 
   static String get pageTitle => _zh ? '接收历史' : 'Receive history';
   static String get summaryTitle => _zh ? '最近收到的内容' : 'Recently received';
-  static String get summaryDescription => _zh
-      ? '查看通过 LocalShare 收到的文件和消息，或打开保存目录。'
-      : 'Review files and messages received through LocalShare, or open the save folder.';
-  static String itemCount(int count) =>
-      _zh ? '$count 条记录' : '$count ${count == 1 ? 'entry' : 'entries'}';
+  static String get summaryDescription =>
+      _zh ? '查看通过 LocalShare 收到的文件和消息，或打开保存目录。' : 'Review files and messages received through LocalShare, or open the save folder.';
+  static String itemCount(int count) => _zh ? '$count 条记录' : '$count ${count == 1 ? 'entry' : 'entries'}';
   static String get openFolder => _zh ? '打开保存目录' : 'Open folder';
   static String get clearHistory => _zh ? '清空历史' : 'Clear history';
   static String get recentItems => _zh ? '历史记录' : 'History';
   static String get emptyTitle => _zh ? '还没有接收记录' : 'No receive history yet';
-  static String get emptyDescription => _zh
-      ? '收到文件或消息后，它们会显示在这里。'
-      : 'Files and messages you receive will appear here.';
+  static String get emptyDescription => _zh ? '收到文件或消息后，它们会显示在这里。' : 'Files and messages you receive will appear here.';
   static String get message => _zh ? '文本消息' : 'Text message';
   static String get savedToGallery => _zh ? '已保存到相册' : 'Saved to gallery';
   static String get unavailable => _zh ? '文件已不可用' : 'File unavailable';
+  static String get deleteEntryTitle => _zh ? '删除这条记录？' : 'Delete this entry?';
+  static String deleteEntryMessage(String name) =>
+      _zh ? '将从历史中移除“" + dollar + "{name}”。文件本身不会被删除。' : 'Remove “" + dollar + "{name}” from history. The file itself is not deleted.';
 }

@@ -5,14 +5,15 @@ import 'package:common/constants.dart';
 import 'package:common/isolate.dart';
 import 'package:common/model/dto/multicast_dto.dart';
 import 'package:localsend_app/features/backup/receiver/backup_receipt_coordinator.dart';
-import 'package:localsend_app/model/cross_file.dart';
+import 'package:localsend_app/model/state/server/receive_session_state.dart';
 import 'package:localsend_app/model/state/server/server_state.dart';
 import 'package:localsend_app/provider/network/server/controller/backup_controller.dart';
 import 'package:localsend_app/provider/network/server/controller/receive_controller.dart';
-import 'package:localsend_app/provider/network/server/controller/send_controller.dart';
 import 'package:localsend_app/provider/network/server/server_utils.dart';
+import 'package:localsend_app/provider/network/web_gateway/web_gateway_provider.dart';
 import 'package:localsend_app/provider/security_provider.dart';
 import 'package:localsend_app/provider/settings_provider.dart';
+import 'package:localsend_app/provider/task_provider.dart';
 import 'package:localsend_app/util/alias_generator.dart';
 import 'package:localsend_app/util/simple_server.dart';
 import 'package:logging/logging.dart';
@@ -27,21 +28,18 @@ final _logger = Logger('Server');
 final serverProvider = NotifierProvider<ServerService, ServerState?>((ref) {
   return ServerService();
 }, onChanged: (_, next, ref) {
+  for (final session in next?.sessions.values ?? <ReceiveSessionState>[]) {
+    ref.notifier(taskProvider).syncReceive(session);
+  }
   final settings = ref.read(settingsProvider);
   final syncState = ref.read(parentIsolateProvider).syncState;
-  final syncStatePrev = (
-    syncState.alias,
-    syncState.port,
-    syncState.protocol,
-    syncState.serverRunning,
-    syncState.download
-  );
+  final syncStatePrev = (syncState.alias, syncState.port, syncState.protocol, syncState.serverRunning, syncState.download);
   final syncStateNext = (
     next?.alias ?? settings.alias,
     next?.port ?? settings.port,
     (next?.https ?? settings.https) ? ProtocolType.https : ProtocolType.http,
     next != null,
-    next?.webSendState != null,
+    ref.read(webGatewayProvider)?.webSendState != null,
   );
 
   if (syncStatePrev == syncStateNext) {
@@ -71,7 +69,6 @@ class ServerService extends Notifier<ServerState?> {
     backupReceiptCoordinator: _backupReceiptCoordinator,
   );
   late final _backupController = BackupController(_backupReceiptCoordinator);
-  late final _sendController = SendController(_serverUtils);
 
   ServerService();
 
@@ -120,11 +117,6 @@ class ServerService extends Notifier<ServerState?> {
       fingerprint: fingerprint,
       showToken: ref.read(settingsProvider).showToken,
     );
-    _sendController.installRoutes(
-      router: router,
-      alias: alias,
-      fingerprint: fingerprint,
-    );
     _backupController.installRoutes(
       router: router,
       fingerprint: fingerprint,
@@ -159,7 +151,6 @@ class ServerService extends Notifier<ServerState?> {
       port: port,
       https: https,
       session: null,
-      webSendState: null,
       pinAttempts: {},
     );
 
@@ -169,6 +160,7 @@ class ServerService extends Notifier<ServerState?> {
 
   Future<void> stopServer() async {
     _logger.info('Stopping server...');
+    _receiveController.interruptAll();
     await state?.httpServer.close();
     state = null;
     _logger.info('Server stopped.');
@@ -179,8 +171,7 @@ class ServerService extends Notifier<ServerState?> {
     return await startServerFromSettings();
   }
 
-  Future<ServerState?> restartServer(
-      {required String alias, required int port, required bool https}) async {
+  Future<ServerState?> restartServer({required String alias, required int port, required bool https}) async {
     await stopServer();
     return await startServer(alias: alias, port: port, https: https);
   }
@@ -188,6 +179,15 @@ class ServerService extends Notifier<ServerState?> {
   void acceptFileRequest(Map<String, String> fileNameMap) {
     _receiveController.acceptFileRequest(fileNameMap);
   }
+
+  void acceptTask(String id) {
+    final session = state?.sessions[id];
+    if (session == null) return;
+    _receiveController.controllerFor(id)?.acceptFileRequest({for (final f in session.files.values) f.file.id: f.file.fileName});
+  }
+
+  void declineTask(String id) => _receiveController.controllerFor(id)?.declineFileRequest();
+  void cancelTask(String id) => _receiveController.controllerFor(id)?.cancelSession();
 
   void declineFileRequest() {
     _receiveController.declineFileRequest();
@@ -211,39 +211,6 @@ class ServerService extends Notifier<ServerState?> {
   /// Clears the session.
   void closeSession() {
     _receiveController.closeSession();
-  }
-
-  /// Initializes the web send state.
-  Future<void> initializeWebSend(List<CrossFile> files) async {
-    await _sendController.initializeWebSend(files: files);
-  }
-
-  /// Updates the web send pin.
-  void setWebSendPin(String? pin) {
-    state = state?.copyWith(
-      webSendState: state?.webSendState?.copyWith(
-        pin: pin,
-      ),
-    );
-  }
-
-  /// Updates the auto accept setting for web send.
-  void setWebSendAutoAccept(bool autoAccept) {
-    state = state?.copyWith(
-      webSendState: state?.webSendState?.copyWith(
-        autoAccept: autoAccept,
-      ),
-    );
-  }
-
-  /// Accepts the web send request.
-  void acceptWebSendRequest(String sessionId) {
-    _sendController.acceptRequest(sessionId);
-  }
-
-  /// Declines the web send request.
-  void declineWebSendRequest(String sessionId) {
-    _sendController.declineRequest(sessionId);
   }
 }
 

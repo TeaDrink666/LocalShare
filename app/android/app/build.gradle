@@ -68,6 +68,10 @@ android {
 
     buildTypes {
         release {
+            // Match all packaged plugin libraries to the Flutter AOT ABIs.
+            ndk {
+                abiFilters "arm64-v8a"
+            }
             // Use the local debug keystore for developer-only release builds
             // when no private release key.properties file is configured.
             signingConfig rootProject.file('key.properties').exists()
