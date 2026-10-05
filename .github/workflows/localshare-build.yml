@@ -13,7 +13,7 @@ env:
 
 jobs:
   android:
-    name: Android Release APKs
+    name: Android Release APK
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout
@@ -40,15 +40,15 @@ jobs:
 
       - name: Build arm64-v8a APK
         working-directory: app
-        run: flutter build apk --release --split-per-abi --target-platform android-arm64 --no-pub
+        run: flutter build apk --release --target-platform android-arm64 --no-pub
 
-      - name: Upload Android APKs
+      - name: Upload Android APK
         uses: actions/upload-artifact@v4
         with:
           name: LocalShare-Android-Release
           if-no-files-found: error
           path: |
-            app/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+            app/build/app/outputs/flutter-apk/app-release.apk
 
   windows:
     name: Windows Release Packages
