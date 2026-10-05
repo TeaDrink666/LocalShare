@@ -3,11 +3,13 @@ import 'dart:typed_data';
 
 import 'package:common/isolate.dart';
 import 'package:common/model/device.dart';
+import 'package:common/src/isolate/child/http_provider.dart';
 import 'package:common/src/isolate/child/main.dart';
 import 'package:common/src/isolate/dto/isolate_task.dart';
 import 'package:common/src/isolate/dto/isolate_task_result.dart';
 import 'package:common/src/isolate/dto/send_to_isolate_data.dart';
 import 'package:common/src/task/upload/http_upload.dart';
+import 'package:common/src/task/upload/resumable_upload.dart';
 import 'package:common/util/stream.dart';
 import 'package:meta/meta.dart';
 import 'package:refena/refena.dart';
@@ -31,6 +33,7 @@ class HttpUploadTask implements BaseHttpUploadTask {
   final String mime;
   final int fileSize;
   final Device device;
+  final bool resumable;
 
   HttpUploadTask({
     required this.remoteSessionId,
@@ -41,6 +44,7 @@ class HttpUploadTask implements BaseHttpUploadTask {
     required this.mime,
     required this.fileSize,
     required this.device,
+    this.resumable = false,
   });
 }
 
@@ -96,7 +100,7 @@ Future<void> setupHttpUploadIsolate(
           return;
       }
 
-      final Stream<List<int>>? fileStream = uploadTask.filePath != null
+      final Stream<List<int>>? fileStream = !uploadTask.resumable && uploadTask.filePath != null
           ? _uriContentStreamResolver != null && uploadTask.filePath!.startsWith('content://')
               ? _uriContentStreamResolver!.resolve(Uri.parse(uploadTask.filePath!))
               : File(uploadTask.filePath!).openRead()
@@ -108,22 +112,45 @@ Future<void> setupHttpUploadIsolate(
         final cancelToken = CustomCancelToken();
         ref.read(_cancelTokenProvider).putIfAbsent(task.id, () => cancelToken);
 
-        await ref.read(httpUploadProvider).upload(
-              stream: streamController?.stream ?? Stream.fromIterable([uploadTask.fileBytes!]),
-              contentLength: uploadTask.fileSize,
-              contentType: uploadTask.mime,
-              target: uploadTask.device,
-              remoteSessionId: uploadTask.remoteSessionId,
+        if (uploadTask.resumable && uploadTask.remoteSessionId != null) {
+          Stream<List<int>> openSource(int start, int? end) {
+            if (uploadTask.filePath == null) {
+              return Stream.value(uploadTask.fileBytes!.sublist(start, end));
+            }
+            if (uploadTask.filePath!.startsWith('content://')) {
+              return byteRange(_uriContentStreamResolver!.resolve(Uri.parse(uploadTask.filePath!)), start, end);
+            }
+            return File(uploadTask.filePath!).openRead(start, end);
+          }
+
+          await uploadResumable(
+              client: ref.read(httpProvider).longLiving,
+              device: uploadTask.device,
+              sessionId: uploadTask.remoteSessionId!,
               fileId: uploadTask.fileId,
               token: uploadTask.remoteFileToken,
-              onSendProgress: (progress) {
-                sendToMain(IsolateTaskStreamResult.event(
-                  id: task.id,
-                  data: progress,
-                ));
-              },
+              size: uploadTask.fileSize,
+              openSource: openSource,
               cancelToken: cancelToken,
-            );
+              onProgress: (progress) => sendToMain(IsolateTaskStreamResult.event(id: task.id, data: progress)));
+        } else {
+          await ref.read(httpUploadProvider).upload(
+                stream: streamController?.stream ?? Stream.fromIterable([uploadTask.fileBytes!]),
+                contentLength: uploadTask.fileSize,
+                contentType: uploadTask.mime,
+                target: uploadTask.device,
+                remoteSessionId: uploadTask.remoteSessionId,
+                fileId: uploadTask.fileId,
+                token: uploadTask.remoteFileToken,
+                onSendProgress: (progress) {
+                  sendToMain(IsolateTaskStreamResult.event(
+                    id: task.id,
+                    data: progress,
+                  ));
+                },
+                cancelToken: cancelToken,
+              );
+        }
 
         sendToMain(IsolateTaskStreamResult.done(
           id: task.id,
@@ -134,6 +161,7 @@ Future<void> setupHttpUploadIsolate(
           error: e.toString(),
         ));
       } finally {
+        ref.read(_cancelTokenProvider).remove(task.id);
         // Close the stream if it is still open
         // ignore: unawaited_futures
         streamController?.close();

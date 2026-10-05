@@ -175,6 +175,7 @@ class IsolateHttpUploadActionResult {
 }
 
 class IsolateHttpUploadAction extends ReduxActionWithResult<IsolateController, ParentIsolateState, IsolateHttpUploadActionResult> {
+  final bool resumable;
   final int isolateIndex;
   final String? remoteSessionId;
   final String remoteFileToken;
@@ -186,6 +187,7 @@ class IsolateHttpUploadAction extends ReduxActionWithResult<IsolateController, P
   final Device device;
 
   IsolateHttpUploadAction({
+    this.resumable = false,
     required this.isolateIndex,
     required this.remoteSessionId,
     required this.remoteFileToken,
@@ -202,6 +204,7 @@ class IsolateHttpUploadAction extends ReduxActionWithResult<IsolateController, P
     final connection = state.httpUpload[isolateIndex];
 
     final task = HttpUploadTask(
+      resumable: resumable,
       remoteSessionId: remoteSessionId,
       remoteFileToken: remoteFileToken,
       fileId: fileId,

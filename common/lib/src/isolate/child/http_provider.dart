@@ -6,6 +6,7 @@ abstract class CustomHttpClient {
   Future<String> get({
     required String uri,
     required Map<String, String> query,
+    CustomCancelToken? cancelToken,
   });
 
   Future<String> post({
@@ -26,13 +27,17 @@ abstract class CustomHttpClient {
 
 class CustomCancelToken {
   void Function()? _cancel;
+  bool _canceled = false;
+  bool get isCanceled => _canceled;
 
   void cancel() {
+    _canceled = true;
     _cancel?.call();
   }
 
   void setCancel(void Function() cancel) {
     _cancel = cancel;
+    if (_canceled) cancel();
   }
 }
 

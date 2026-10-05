@@ -14,8 +14,7 @@ class HomePageVm {
   });
 }
 
-final homePageControllerProvider =
-    ReduxProvider<HomePageController, HomePageVm>(
+final homePageControllerProvider = ReduxProvider<HomePageController, HomePageVm>(
   (ref) => HomePageController(),
 );
 
@@ -24,7 +23,7 @@ class HomePageController extends ReduxNotifier<HomePageVm> {
   HomePageVm init() {
     return HomePageVm(
       controller: PageController(),
-      currentTab: HomeTab.send,
+      currentTab: HomeTab.home,
       changeTab: (tab) => redux.dispatch(ChangeTabAction(tab)),
     );
   }
@@ -42,14 +41,12 @@ class ChangeTabAction extends ReduxAction<HomePageController, HomePageVm> {
     }
 
     void jumpWhenReady() {
-      if (state.controller.hasClients &&
-          state.controller.position.hasViewportDimension) {
+      if (state.controller.hasClients && state.controller.position.hasViewportDimension) {
         state.controller.jumpToPage(tab.index);
       }
     }
 
-    if (state.controller.hasClients &&
-        state.controller.position.hasViewportDimension) {
+    if (state.controller.hasClients && state.controller.position.hasViewportDimension) {
       state.controller.jumpToPage(tab.index);
     } else {
       WidgetsBinding.instance.addPostFrameCallback((_) => jumpWhenReady());

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">LocalShare</string>
+    <string name="transfer_channel_name">Transfers</string>
+    <string name="transfer_notification_title">LocalShare 正在传输文件</string>
+    <string name="transfer_notification_text">保持服务运行以完成传输</string>
+</resources>

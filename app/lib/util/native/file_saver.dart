@@ -29,6 +29,8 @@ Future<void> saveFile({
   required DateTime? lastModified,
   required DateTime? lastAccessed,
   required void Function(int savedBytes) onProgress,
+  bool preserveName = false,
+  int? expectedSize,
 }) async {
   if (!saveToGallery && androidSdkInt != null) {
     // Use SAF to save the file
@@ -58,6 +60,11 @@ Future<void> saveFile({
 
     if (safInfo != null) {
       final sessionID = safInfo.session;
+      if (preserveName && safInfo.fileResult.fileName != name) {
+        await _saf.endWriteStream(sessionID);
+        await android_channel.deleteTaskDocument(safInfo.fileResult.uri.toString());
+        throw FileSystemException('目标目录无法保留原文件名，请创建新任务', name);
+      }
       await _saveFile(
         destinationPath: destinationPath,
         saveToGallery: saveToGallery,
@@ -72,6 +79,8 @@ Future<void> saveFile({
         close: () async {
           await _saf.endWriteStream(sessionID);
         },
+        expectedSize: expectedSize,
+        deleteOnFailure: () => android_channel.deleteTaskDocument(safInfo!.fileResult.uri.toString()),
       );
       return;
     }
@@ -101,6 +110,7 @@ Future<void> saveFile({
         } catch (_) {}
       }
     },
+    expectedSize: expectedSize,
   );
 }
 
@@ -114,6 +124,8 @@ Future<void> _saveFile({
   required Future<void> Function(Uint8List data)? writeAsync,
   required Future<void> Function()? flush,
   required Future<void> Function() close,
+  int? expectedSize,
+  Future<void> Function()? deleteOnFailure,
 }) async {
   try {
     int savedBytes = 0;
@@ -139,6 +151,9 @@ Future<void> _saveFile({
       }
     }
 
+    if (expectedSize != null && savedBytes != expectedSize) {
+      throw FileSystemException('Received file size does not match', destinationPath);
+    }
     await flush?.call();
     await close();
 
@@ -151,7 +166,11 @@ Future<void> _saveFile({
   } catch (_) {
     try {
       await close();
-      await File(destinationPath).delete();
+      if (deleteOnFailure != null) {
+        await deleteOnFailure();
+      } else {
+        await File(destinationPath).delete();
+      }
     } catch (e) {
       _logger.warning('Could not delete file', e);
     }

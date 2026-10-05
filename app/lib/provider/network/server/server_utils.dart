@@ -24,4 +24,26 @@ class ServerUtils {
     required this.getStateOrNull,
     required this.setState,
   });
+
+  /// Controllers see their own session while the UI can still select one.
+  ServerUtils forSession(String id) => ServerUtils(
+        refFunc: refFunc,
+        getState: () => getState().copyWith(session: getState().sessions[id]),
+        getStateOrNull: () => getStateOrNull()?.copyWith(session: getStateOrNull()?.sessions[id]),
+        setState: (builder) => setState((current) {
+          if (current == null) return null;
+          final changed = builder(current.copyWith(session: current.sessions[id]));
+          if (changed == null) return current;
+          final sessions = {...current.sessions};
+          if (changed.session == null) {
+            sessions.remove(id);
+          } else {
+            sessions[id] = changed.session!;
+          }
+          final focused = current.session?.sessionId == id
+              ? changed.session ?? (sessions.isEmpty ? null : sessions.values.first)
+              : current.session ?? changed.session;
+          return current.copyWith(sessions: sessions, session: focused, pinAttempts: changed.pinAttempts);
+        }),
+      );
 }

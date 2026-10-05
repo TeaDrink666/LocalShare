@@ -1,244 +1,106 @@
-# LocalSend
+# LocalShare
 
-[![CI 状态][ci-badge]][ci-workflow]
+[English](../README.md) | [简体中文](README_ZH.md)
 
-[ci-badge]: https://github.com/localsend/localsend/actions/workflows/ci.yml/badge.svg
-[ci-workflow]: https://github.com/localsend/localsend/actions/workflows/ci.yml
+LocalShare 是一个面向 Windows 和 Android 的局域网文件互传与手机媒体备份工具。
 
-[主页][homepage] • [Discord][discord] • [GitHub][github] • [Codeberg][codeberg]
-
-[English (Default)](/README.md) • [Español](README_ES.md) • [فارسی](README_FA.md) • [Filipino](README_PH.md) • [Français](README_FR.md) • [Indonesia](README_ID.md) • [Italiano](README_IT.md) • [日本語](README_JA.md) • [ភាសាខ្មែរ](README_KM.md) • [한국어](README_KO.md) • [Polski](README_PL.md) • [Portugês Brasil](README_PT_BR.md) • [Русский](README_RU.md) • [ภาษาไทย](README_TH.md) • [Turkish](README_TR.md) • [Українська](README_UK.md) • [Tiếng Việt](README_VI.md) • [中文](README_ZH.md)
-
-> 注意：中文文档更新可能不够及时，请以英文文档为准。
-
-[homepage]: https://localsend.org
-[discord]: https://discord.gg/GSRWmQNP87
-[github]: https://github.com/localsend/localsend
-[codeberg]: https://codeberg.org/localsend/localsend
-
-LocalSend 是一个自由、开源的应用程序，允许你在本地网络上安全地与附近设备分享文件和消息，无需互联网连接。
-
-- [关于](#关于)
-- [截图](#截图)
-- [下载](#下载)
-- [工作原理](#工作原理)
-- [开始使用](#开始使用)
-- [贡献](#贡献)
-  - [翻译](#翻译)
-  - [Bug修复和改进](#bug修复和改进)
-- [构建](#构建)
-  - [Android](#android)
-  - [iOS](#ios)
-  - [macOS](#macos)
-  - [Windows](#windows)
-  - [Linux](#linux)
-
-## 关于
-
-LocalSend 是一个跨平台应用程序，使用 REST API 和 HTTPS 加密实现设备之间的安全通信。与依赖外部服务器的其他消息应用程序不同，LocalSend 不需要互联网连接或第三方服务器，因此成为本地通信的快速可靠解决方案。
-
-## 截图
-
-<img src="https://localsend.org/img/screenshot-iphone.webp" alt="iPhone截图" height="300"/> <img src="https://localsend.org/img/screenshot-pc.webp" alt="PC截图" height="300"/>
+项目基于 LocalSend 的局域网传输能力重新设计，重点解决日常文件互传、浏览器传输和手机照片视频手动备份三个场景。
 
 ## 下载
 
-建议从应用商店或软件包管理器下载该应用，因为该应用没有自动更新功能。
+Windows 安装程序、便携包和 Android APK 请从 [LocalShare GitHub 发行版](https://github.com/TeaDrink666/LocalShare/releases/latest) 下载。
 
-| Windows                  | macOS                   | Linux              | Android        | iOS           | Fire OS    |
-|--------------------------|-------------------------|--------------------|----------------|---------------|------------|
-| [Winget][]               | [App Store][]           | [Flathub][]        | [Play Store][] | [App Store][] | [Amazon][] |
-| [Scoop][]                | [Homebrew][]            | [Nixpkgs][]        | [F-Droid][]    |               |            |
-| [Chocolatey][]           | [DMG Installer][latest] | [Snap][]           | [APK][latest]  |               |            |
-| [EXE Installer][latest]  |                         | [AUR][]            |                |               |            |
-| [Portable ZIP][latest]   |                         | [TAR][latest]      |                |               |            |
-|                          |                         | [DEB][latest]      |                |               |            |
-|                          |                         | [AppImage][latest] |                |               |            |
+## 功能
 
+- Android 与 Windows 客户端之间通过局域网发送和接收文件。
+- 传输统一显示为任务，包含进度、速度和时间估算；切换页面后任务继续执行。
+- 默认同时运行 2 个传输任务，设置可调整为 1–8 个，其余排队；媒体同步最多同时运行 1 个。
+- 原生 LocalShare 传输支持暂停和续传，保留任务记录；普通接收使用独立任务目录，保留原文件名和目录结构。
+- 通过链接或二维码，让浏览器发送文件或接收文件，浏览器端不需要安装客户端。
+- Android 手动扫描全部图片和视频，并增量备份到指定 Windows 电脑。
+- 普通文件接收目录与手机备份目录分别设置，互不混用。
+- 手机备份不保留原始相册目录层级，统一保存到备份目录下的“图片”和“视频”文件夹。
+- Windows 端使用临时文件、大小校验、SHA-256 校验、原子改名和 SQLite 回执记录。
+- 手机只根据 Windows 返回的已核验回执更新备份状态，不需要手动确认“备份成功”。
+- 用户将已备份文件从 Windows 收件目录移动到自己的归档目录后，不会因此被重复备份。
 
-了解更多关于[发行渠道][]的信息。
+## 备份语义
 
-[windows store]: https://www.microsoft.com/store/apps/9NCB4Z0TZ6RR
-[app store]: https://apps.apple.com/us/app/localsend/id1661733229
-[play store]: https://play.google.com/store/apps/details?id=org.localsend.localsend_app
-[f-droid]: https://f-droid.org/packages/org.localsend.localsend_app
-[amazon]: https://www.amazon.com/dp/B0BW6MP732
-[winget]: https://github.com/microsoft/winget-pkgs/tree/master/manifests/l/LocalSend/LocalSend
-[scoop]: https://scoop.sh/#/apps?s=0&d=1&o=true&q=localsend&id=fb88113be361ca32c0dcac423cb4afdeda0b0c66
-[chocolatey]: https://community.chocolatey.org/packages/localsend
-[homebrew]: https://formulae.brew.sh/cask/localsend
-[flathub]: https://flathub.org/apps/details/org.localsend.localsend_app
-[nixpkgs]: https://search.nixos.org/packages?show=localsend
-[snap]: https://snapcraft.io/localsend
-[aur]: https://aur.archlinux.org/packages/localsend-bin
-[latest]: https://github.com/localsend/localsend/releases/latest
-[发行渠道]: https://github.com/localsend/localsend/blob/main/CONTRIBUTING.md#distribution
+备份是手动触发的增量任务，不包含定时任务、后台自动备份、云中继或互联网传输。
 
-**兼容性**
-| 平台    | 最低版本   | 备注   |
-|---------|------------|--------------------------------------------------------------------------------------------------------------------------------|
-|Android  | 5.0        | -                                                                                                                              |
-|iOS      | 12.0       | -                                                                                                                              |
-|macOS    | 11 Big Sur | 请使用 OpenCore Legacy Patcher 2.0.2 （见 [#1005](https://github.com/localsend/localsend/issues/1005#issuecomment-2449899384)） |
-|Windows  | 10         | 最后一个支持 Windows 7 的版本是 v1.15.4 。未来也许会将更新的版本向后移植至兼容 Windows 7 。                                       |
-|Linux    | 不适用     | -                                                                                                                               |
+Windows 收件目录是“备份收件箱”，不是由应用长期管理的媒体库。完成核验并写入回执后，文件可以由用户自行移动。网页备份仍需要人工确认，因为浏览器无法向 Windows 客户端证明文件最终写入了哪个目录。
 
-## 设置
+详细架构和协议说明见 [`docs/LOCALSHARE_ARCHITECTURE.md`](../docs/LOCALSHARE_ARCHITECTURE.md)。
+任务调度、续传兼容性和后台支持范围见 [`docs/TASK_CENTER.md`](../docs/TASK_CENTER.md)。
 
-在大多数情况下，LocalSend 应该可以直接使用。但是，如果你在发送或接收文件时遇到问题，可能需要配置防火墙以允许 LocalSend 在你的本地网络上通信。
+## 升级到 0.2.1
 
-| 流量类型 | 协议     | 端口  | 操作 |
-|----------|----------|-------|------|
-| 传入     | TCP, UDP | 53317 | 允许 |
-| 传出     | TCP, UDP | 任意  | 允许 |
+正式 Android APK 使用项目固定发布签名，可直接覆盖本地签名版 0.2.0。旧 GitHub 正式版 0.1.0 / 0.1.1 使用不同签名，需要先备份应用配置与记录，卸载旧版后安装 0.2.1。以后持续使用同一签名的版本可以覆盖升级。
 
-另外，请确保禁用路由器上的 AP 隔离。通常默认情况下应禁用它，但某些路由器可能会启用它（比如访客网络）。
-更多信息见 [故障排查](#故障排查)。
+Windows 沿用同一应用标识和自签名代码签名证书；安装程序支持升级，但系统仍可能显示发布者不受信任或 SmartScreen 提示。
 
-**便携模式**
+完整更新内容见 [`CHANGELOG.md`](../CHANGELOG.md)。
 
-（在 v1.13.0 中引入）
+## 本地构建
 
-创建一个名为 `settings.json` 的文件，放置在与可执行文件相同的目录中。
-此文件可以为空。
-应用程序将使用此文件来存储设置，而不是默认位置。
+推荐环境：
 
-**隐藏式启动**
+- Flutter 3.24.5
+- Dart 3.5.x
+- JDK 17
+- Android SDK 34、NDK 23.1.7779620
+- Rust stable（`rhttp` 原生依赖使用）
 
-（更新于 v1.15.0）
+首次准备依赖：
 
-使用 `--hidden` 命令行参数隐藏式启动（只在系统托盘里显示）此应用（例如： `localsend_app.exe --hidden`）。
-
-在 v1.14.0 或更早的版本中，如果设置了 `autostart` 标志，并且启用了隐藏设置，则应用程序将会隐藏式启动。
-
-## 工作原理
-
-LocalSend 使用安全通信协议，允许设备通过 REST API 进行通信。所有数据都通过 HTTPS 安全地发送，并且 TLS/SSL 证书会在每台设备上动态生成，确保最大的安全性。
-
-欲了解更多关于 LocalSend 协议的信息，请参阅[文档](https://github.com/localsend/protocol)。
-
-## 开始使用
-
-要从源代码编译 LocalSend，请按照以下步骤进行操作：
-
-1. 安装 [Flutter](https://flutter.dev)。
-2. 安装 [Rust](https://www.rust-lang.org/tools/install)。
-3. 克隆 `LocalSend` 代码库。
-4. 执行 `cd app` 进入 app 目录。
-5. 运行 `flutter pub get` 下载依赖项。
-6. 运行 `flutter run` 启动应用程序。
-
-> [!NOTE]
-> LocalSend 目前需要老版本的 Flutter （具体见 [.fvmrc](/.fvmrc)）
-> 因而一些构建问题也许是系统安装的 Flutter 版本和 LocalSend 所需的 Flutter 版本不一致导致的。
-> 为了在开发过程中保持一致性，LocalSend 使用 [fvm](https://fvm.app) 来管理此项目的 Flutter 版本。
-> 安装 `fvm` 后，请运行 `fvm flutter` 而非 `flutter` 。
-
-## 贡献
-
-我们欢迎任何有兴趣帮助改进 LocalSend 的人士贡献。如果你想贡献，有几种方式可以参与：
-
-### 翻译
-
-你可以帮助将此应用程序翻译成其他语言。我们使用 [Weblate](https://hosted.weblate.org/projects/localsend/app) 平台来管理翻译。
-
-另外，你也可以 fork 这个仓库并手动添加翻译。
-
-翻译在 [app/assets/i18n](https://github.com/localsend/localsend/tree/main/app/assets/i18n) 目录。编辑 `_missing_translations_<locale>.json` 或 `strings_<locale>.i18n.json` 文件来添加或更新翻译。
-
-<a href="https://hosted.weblate.org/engage/localsend/">
-<img src="https://hosted.weblate.org/widget/localsend/app/multi-auto.svg" alt="Translation status" />
-</a>
-
-**_注意：_ 用 `@` 装饰的字段不是用于翻译的；它们在应用程序中没有任何用处，仅仅是关于文件的信息性文本或为翻译者提供上下文。**
-
-### Bug 修复和改进
-
-- **Bug 修复：** 如果发现 bug，请创建一个带有清晰描述问题及解决方法的拉取请求。
-- **改进：** 有改进 LocalSend 的想法吗？请先创建一个问题来讨论为什么需要这个改进。
-
-欲了解更多信息，请参阅[贡献指南](https://github.com/localsend/localsend/blob/main/CONTRIBUTING.md)。
-
-## 故障排查
-
-| 问题       | 平台（发送端） | 平台（接收端） | 解决办法
-|------------|---------------|-----------------|----------------------------------------------------------------------------|
-| 设备不可见 | 任何           | 任何            | 确保关闭路由器的AP隔离。如果AP隔离是开着的，设备间的连接会被禁止。            |
-| 设备不可见 | 任何           | Windows         | 确保将你的网络配置为“私有”网络。当你的网络为公共网络时 Windows 会更具限制性。 |
-| 设备不可见 | macOS, iOS     | 任何            | 尝试在系统设置中的“隐私”下切换“本地网络”权限。                               |
-| 速度太慢   | 任何           | 任何            | 使用 5 Ghz 频段；关闭发送和接收端设备的数据加密。                            |
-| 速度太慢   | 任何           | 安卓            | 已知的问题。见 https://github.com/flutter-cavalry/saf_stream/issues/4       |
-
-## 构建
-
-这些命令仅供维护者使用。
-
-### Android
-
-传统 APK
-
-```bash
-flutter build apk
+```powershell
+cd app
+flutter pub get
 ```
 
-Google Play 的 AppBundle
+Android ARM64 Release APK：
 
-```bash
-flutter build appbundle
+```powershell
+flutter build apk --release --target-platform android-arm64
 ```
 
-### iOS
+正式 Android 安装包仅支持 `arm64-v8a`（ARM 64 位）。
 
-```bash
-flutter build ipa
+仓库没有提交正式发布密钥时，构建会使用开发 keystore 生成可供测试安装的 Release 包；正式发布或上架应用商店前，需要配置自己的 `android/key.properties` 和 keystore。
+
+Windows Release：
+
+```powershell
+flutter build windows --release
 ```
 
-### macOS
+Windows Inno Setup 安装程序：
 
-```bash
-flutter build macos
+1. 先生成 Windows Release。
+2. 使用 Inno Setup 编译 [`scripts/compile_localshare_setup.iss`](../scripts/compile_localshare_setup.iss)。
+
+Windows 插件如果无法创建符号链接，请在管理员 PowerShell 中运行 [`scripts/compile_windows_debug_localshare.ps1`](../scripts/compile_windows_debug_localshare.ps1) 进行依赖准备。
+
+## GitHub Actions
+
+推送到 `main` 分支或手动运行 `LocalShare Build` 工作流后，GitHub Actions 会构建：
+
+- Android `arm64-v8a` Release APK
+- Windows x64 Release 便携包
+- Windows x64 Inno Setup 安装程序
+
+构建结果可以在对应 Actions 运行的 Artifacts 中下载。项目不把本地构建缓存、工具链或 `dist` 安装包提交到 Git 仓库。
+未提供私有签名配置时，CI 构建使用开发签名；正式升级请使用 GitHub 发行版附带的已签名安装包。
+
+## 测试
+
+在 `app` 目录运行：
+
+```powershell
+flutter analyze
+flutter test
 ```
 
-### Windows
+## 许可证
 
-**传统**
-
-```bash
-flutter build windows
-```
-
-**本地 MSIX 应用**
-
-```bash
-flutter pub run msix:create
-```
-
-**微软商店分发包**
-
-```bash
-flutter pub run msix:create --store
-```
-
-### Linux
-
-**传统**
-
-```bash
-flutter build linux
-```
-
-**AppImage**
-
-```bash
-appimage-builder --recipe AppImageBuilder.yml
-```
-
-**Snap**
-
-使用说明：[localsend/snap/README.md](https://github.com/localsend/snap/blob/main/README.md)
-
-## 贡献者
-
-<a href="https://github.com/localsend/localsend/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=localsend/localsend"  alt="Localsend 贡献者"/>
-</a>
+本项目遵循仓库中的 [LICENSE](../LICENSE) 文件。项目基于 LocalSend 开源项目发展，相关原始版权和许可证信息保持在仓库历史与源文件中。

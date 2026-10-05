@@ -1,14 +1,12 @@
 import 'dart:async';
 
-import 'package:common/util/sleep.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:localsend_app/gen/strings.g.dart';
 import 'package:localsend_app/model/cross_file.dart';
 import 'package:localsend_app/model/state/send/web/web_send_session.dart';
 import 'package:localsend_app/provider/local_ip_provider.dart';
-import 'package:localsend_app/provider/network/server/server_provider.dart';
-import 'package:localsend_app/provider/settings_provider.dart';
+import 'package:localsend_app/provider/network/web_gateway/web_gateway_provider.dart';
 import 'package:localsend_app/util/native/platform_check.dart';
 import 'package:localsend_app/util/ui/snackbar.dart';
 import 'package:localsend_app/widget/dialogs/pin_dialog.dart';
@@ -34,60 +32,37 @@ class WebSendPage extends StatefulWidget {
 
 class _WebSendPageState extends State<WebSendPage> with Refena {
   _ServerState _stateEnum = _ServerState.initializing;
-  bool _encrypted = false;
   String? _initializedError;
   Future<void>? _initialization;
   int _operationGeneration = 0;
   bool _closing = false;
-  bool _allowPop = false;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _beginInit(encrypted: false);
+      _beginInit();
     });
   }
 
-  void _beginInit({required bool encrypted}) {
+  void _beginInit() {
     if (_closing || !mounted) {
       return;
     }
-    unawaited(_initialization = _init(encrypted: encrypted));
+    unawaited(_initialization = _init());
   }
 
-  Future<void> _init({required bool encrypted}) async {
+  Future<void> _init() async {
     final operationGeneration = ++_operationGeneration;
-    final settings = ref.read(settingsProvider);
-    final (beforeAutoAccept, beforePin) = ref.read(serverProvider.select(
-        (state) =>
-            (state?.webSendState?.autoAccept, state?.webSendState?.pin)));
     setState(() {
       _stateEnum = _ServerState.initializing;
-      _encrypted = encrypted;
       _initializedError = null;
     });
-    await sleepAsync(500);
-    if (_closing || operationGeneration != _operationGeneration) {
-      return;
-    }
     try {
-      await ref.notifier(serverProvider).restartServer(
-            alias: settings.alias,
-            port: settings.port,
-            https: _encrypted,
-          );
+      await ref.notifier(webGatewayProvider).startWebSend(files: widget.files);
       if (_closing || operationGeneration != _operationGeneration) {
         return;
       }
-      await ref.notifier(serverProvider).initializeWebSend(widget.files);
-      if (_closing || operationGeneration != _operationGeneration) {
-        return;
-      }
-      if (beforeAutoAccept != null) {
-        ref.notifier(serverProvider).setWebSendAutoAccept(beforeAutoAccept);
-      }
-      ref.notifier(serverProvider).setWebSendPin(beforePin);
       if (mounted) {
         setState(() {
           _stateEnum = _ServerState.running;
@@ -103,9 +78,11 @@ class _WebSendPageState extends State<WebSendPage> with Refena {
     }
   }
 
-  /// Web share uses unencrypted http, so we need to revert to the previous state.
-  Future<void> _revertServerState() async {
-    await ref.notifier(serverProvider).restartServerFromSettings();
+  /// Closes the web download session. The native server is never restarted or
+  /// reconfigured by the web share page, and a concurrent web upload session
+  /// on the same gateway listener keeps running.
+  Future<void> _stopGateway() async {
+    await ref.notifier(webGatewayProvider).stopWebSend();
   }
 
   Future<void> _requestClose() async {
@@ -126,14 +103,12 @@ class _WebSendPageState extends State<WebSendPage> with Refena {
       // The normal cleanup below still needs to restore the native server.
     }
     try {
-      await _revertServerState();
+      await _stopGateway();
     } catch (_) {
       // Exiting the page must remain possible even if server recovery fails.
     } finally {
       if (mounted) {
-        setState(() {
-          _allowPop = true;
-        });
+        setState(() {});
         await Future<void>.delayed(Duration.zero);
         if (mounted) {
           Navigator.of(context).pop();
@@ -146,12 +121,7 @@ class _WebSendPageState extends State<WebSendPage> with Refena {
   Widget build(BuildContext context) {
     final copy = _WebSendCopy.of(context);
     return PopScope(
-      onPopInvokedWithResult: (didPop, _) {
-        if (!didPop) {
-          unawaited(_requestClose());
-        }
-      },
-      canPop: _allowPop,
+      canPop: true,
       child: Scaffold(
         appBar: AppBar(
           title: Text(copy.pageTitle),
@@ -163,27 +133,24 @@ class _WebSendPageState extends State<WebSendPage> with Refena {
                 return _ServerStatusView(
                   state: _stateEnum,
                   error: _initializedError,
-                  onRetry: () => _beginInit(encrypted: _encrypted),
+                  onRetry: _beginInit,
                 );
               }
 
-              final serverState = context.watch(serverProvider);
-              final webSendState = serverState?.webSendState;
+              final gatewayState = context.watch(webGatewayProvider);
+              final webSendState = gatewayState?.webSendState;
               final localIps = context.watch(localIpProvider).localIps;
-              if (serverState == null || webSendState == null) {
+              if (gatewayState == null || webSendState == null) {
                 return _ServerStatusView(
                   state: _ServerState.error,
                   error: copy.missingServerState,
-                  onRetry: () => _beginInit(encrypted: _encrypted),
+                  onRetry: _beginInit,
                 );
               }
 
               final addresses = localIps.map((ip) {
-                final url =
-                    '${_encrypted ? 'https' : 'http'}://$ip:${serverState.port}';
-                final urlWithPin = webSendState.pin == null
-                    ? url
-                    : '$url/?pin=${Uri.encodeQueryComponent(webSendState.pin!)}';
+                final url = 'http://$ip:${gatewayState.port}';
+                final urlWithPin = webSendState.pin == null ? url : '$url/?pin=${Uri.encodeQueryComponent(webSendState.pin!)}';
                 return _ShareAddress(
                   displayUrl: url,
                   actionUrl: urlWithPin,
@@ -194,18 +161,14 @@ class _WebSendPageState extends State<WebSendPage> with Refena {
                 addresses: addresses,
                 sessions: webSendState.sessions.values.toList(growable: false),
                 fileCount: widget.files.length,
-                encrypted: _encrypted,
                 autoAccept: webSendState.autoAccept,
                 pin: webSendState.pin,
-                onEncryptionChanged: (value) {
-                  _beginInit(encrypted: value);
-                },
                 onAutoAcceptChanged: (value) {
-                  ref.notifier(serverProvider).setWebSendAutoAccept(value);
+                  ref.notifier(webGatewayProvider).setWebSendAutoAccept(value);
                 },
                 onPinChanged: (value) async {
                   if (!value) {
-                    ref.notifier(serverProvider).setWebSendPin(null);
+                    ref.notifier(webGatewayProvider).setWebSendPin(null);
                     return;
                   }
                   final newPin = await showDialog<String>(
@@ -216,14 +179,14 @@ class _WebSendPageState extends State<WebSendPage> with Refena {
                     ),
                   );
                   if (newPin != null && newPin.isNotEmpty) {
-                    ref.notifier(serverProvider).setWebSendPin(newPin);
+                    ref.notifier(webGatewayProvider).setWebSendPin(newPin);
                   }
                 },
                 onAccept: (sessionId) {
-                  ref.notifier(serverProvider).acceptWebSendRequest(sessionId);
+                  ref.notifier(webGatewayProvider).acceptWebSendRequest(sessionId);
                 },
                 onDecline: (sessionId) {
-                  ref.notifier(serverProvider).declineWebSendRequest(sessionId);
+                  ref.notifier(webGatewayProvider).declineWebSendRequest(sessionId);
                 },
                 onClose: _requestClose,
               );
@@ -282,25 +245,20 @@ class _ServerStatusView extends StatelessWidget {
             padding: const EdgeInsets.all(LocalShareSpacing.lg),
             child: ConstrainedBox(
               constraints: BoxConstraints(
-                minHeight: (constraints.maxHeight - LocalShareSpacing.xxl)
-                    .clamp(0, double.infinity),
+                minHeight: (constraints.maxHeight - LocalShareSpacing.xxl).clamp(0, double.infinity),
               ),
               child: Center(
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 620),
                   child: LocalShareSurface(
-                    style: isError
-                        ? LocalShareSurfaceStyle.standard
-                        : LocalShareSurfaceStyle.accent,
+                    style: isError ? LocalShareSurfaceStyle.standard : LocalShareSurfaceStyle.accent,
                     padding: const EdgeInsets.all(LocalShareSpacing.xl),
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         DecoratedBox(
                           decoration: BoxDecoration(
-                            color: isError
-                                ? theme.colorScheme.errorContainer
-                                : theme.colorScheme.onPrimary.withOpacity(0.14),
+                            color: isError ? theme.colorScheme.errorContainer : theme.colorScheme.onPrimary.withOpacity(0.14),
                             shape: BoxShape.circle,
                           ),
                           child: Padding(
@@ -324,9 +282,7 @@ class _ServerStatusView extends StatelessWidget {
                         Text(
                           title,
                           style: theme.textTheme.headlineSmall?.copyWith(
-                            color: isError
-                                ? theme.colorScheme.onSurface
-                                : theme.colorScheme.onPrimary,
+                            color: isError ? theme.colorScheme.onSurface : theme.colorScheme.onPrimary,
                           ),
                           textAlign: TextAlign.center,
                         ),
@@ -334,9 +290,7 @@ class _ServerStatusView extends StatelessWidget {
                         Text(
                           subtitle,
                           style: theme.textTheme.bodyMedium?.copyWith(
-                            color: isError
-                                ? theme.colorScheme.onSurfaceVariant
-                                : theme.colorScheme.onPrimary.withOpacity(0.78),
+                            color: isError ? theme.colorScheme.onSurfaceVariant : theme.colorScheme.onPrimary.withOpacity(0.78),
                           ),
                           textAlign: TextAlign.center,
                         ),
@@ -380,10 +334,8 @@ class _RunningWebSendView extends StatelessWidget {
     required this.addresses,
     required this.sessions,
     required this.fileCount,
-    required this.encrypted,
     required this.autoAccept,
     required this.pin,
-    required this.onEncryptionChanged,
     required this.onAutoAcceptChanged,
     required this.onPinChanged,
     required this.onAccept,
@@ -394,10 +346,8 @@ class _RunningWebSendView extends StatelessWidget {
   final List<_ShareAddress> addresses;
   final List<WebSendSession> sessions;
   final int fileCount;
-  final bool encrypted;
   final bool autoAccept;
   final String? pin;
-  final ValueChanged<bool> onEncryptionChanged;
   final ValueChanged<bool> onAutoAcceptChanged;
   final ValueChanged<bool> onPinChanged;
   final ValueChanged<String> onAccept;
@@ -406,8 +356,7 @@ class _RunningWebSendView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final pendingCount =
-        sessions.where((session) => session.responseHandler != null).length;
+    final pendingCount = sessions.where((session) => session.responseHandler != null).length;
 
     return SafeArea(
       child: SingleChildScrollView(
@@ -426,24 +375,19 @@ class _RunningWebSendView extends StatelessWidget {
                 _ReadyHero(
                   fileCount: fileCount,
                   pendingCount: pendingCount,
-                  encrypted: encrypted,
                 ),
                 const SizedBox(height: LocalShareSpacing.lg),
                 LayoutBuilder(
                   builder: (context, constraints) {
                     final textScale = MediaQuery.textScalerOf(context).scale(1);
-                    final isWide =
-                        constraints.maxWidth >= 800 && textScale <= 1.35;
+                    final isWide = constraints.maxWidth >= 800 && textScale <= 1.35;
                     final addressesSection = _AddressSection(
                       addresses: addresses,
                       pin: pin,
-                      encrypted: encrypted,
                     );
                     final settingsSection = _SettingsSection(
-                      encrypted: encrypted,
                       autoAccept: autoAccept,
                       pin: pin,
-                      onEncryptionChanged: onEncryptionChanged,
                       onAutoAcceptChanged: onAutoAcceptChanged,
                       onPinChanged: onPinChanged,
                     );
@@ -504,12 +448,10 @@ class _ReadyHero extends StatelessWidget {
   const _ReadyHero({
     required this.fileCount,
     required this.pendingCount,
-    required this.encrypted,
   });
 
   final int fileCount;
   final int pendingCount;
-  final bool encrypted;
 
   @override
   Widget build(BuildContext context) {
@@ -522,8 +464,7 @@ class _ReadyHero extends StatelessWidget {
       padding: const EdgeInsets.all(LocalShareSpacing.lg),
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final compact = constraints.maxWidth < 540 ||
-              MediaQuery.textScalerOf(context).scale(1) > 1.3;
+          final compact = constraints.maxWidth < 540 || MediaQuery.textScalerOf(context).scale(1) > 1.3;
           final text = Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -532,15 +473,13 @@ class _ReadyHero extends StatelessWidget {
                 runSpacing: LocalShareSpacing.xs,
                 children: [
                   _HeroBadge(
-                    icon: Icons.circle,
-                    label: copy.waitingForBrowser,
+                    icon: Icons.lan_outlined,
+                    label: 'HTTP',
                     foreground: foreground,
                   ),
                   _HeroBadge(
-                    icon: encrypted
-                        ? Icons.lock_outline_rounded
-                        : Icons.lan_outlined,
-                    label: encrypted ? 'HTTPS' : 'HTTP',
+                    icon: Icons.circle,
+                    label: copy.waitingForBrowser,
                     foreground: foreground,
                   ),
                 ],
@@ -567,13 +506,11 @@ class _ReadyHero extends StatelessWidget {
                 children: [
                   Text(
                     copy.fileCount(fileCount),
-                    style:
-                        theme.textTheme.labelLarge?.copyWith(color: foreground),
+                    style: theme.textTheme.labelLarge?.copyWith(color: foreground),
                   ),
                   Text(
                     copy.pendingCount(pendingCount),
-                    style:
-                        theme.textTheme.labelLarge?.copyWith(color: foreground),
+                    style: theme.textTheme.labelLarge?.copyWith(color: foreground),
                   ),
                 ],
               ),
@@ -655,12 +592,10 @@ class _AddressSection extends StatelessWidget {
   const _AddressSection({
     required this.addresses,
     required this.pin,
-    required this.encrypted,
   });
 
   final List<_ShareAddress> addresses;
   final String? pin;
-  final bool encrypted;
 
   @override
   Widget build(BuildContext context) {
@@ -711,16 +646,14 @@ class _AddressSection extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Icon(
-                encrypted
-                    ? Icons.lock_outline_rounded
-                    : Icons.verified_user_outlined,
+                Icons.verified_user_outlined,
                 size: 20,
                 color: theme.colorScheme.primary,
               ),
               const SizedBox(width: LocalShareSpacing.xs),
               Expanded(
                 child: Text(
-                  encrypted ? copy.httpsSummary : copy.httpSummary,
+                  copy.httpSummary,
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
@@ -863,8 +796,7 @@ class _RequestSection extends StatelessWidget {
   Widget build(BuildContext context) {
     final copy = _WebSendCopy.of(context);
     final theme = Theme.of(context);
-    final pending =
-        sessions.where((session) => session.responseHandler != null).length;
+    final pending = sessions.where((session) => session.responseHandler != null).length;
     return LocalShareSurface(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -937,20 +869,14 @@ class _RequestCard extends StatelessWidget {
       children: [
         DecoratedBox(
           decoration: BoxDecoration(
-            color: pending
-                ? context.localShareDesign.warning.withOpacity(0.14)
-                : theme.colorScheme.primaryContainer,
+            color: pending ? context.localShareDesign.warning.withOpacity(0.14) : theme.colorScheme.primaryContainer,
             borderRadius: BorderRadius.circular(LocalShareRadii.medium),
           ),
           child: Padding(
             padding: const EdgeInsets.all(LocalShareSpacing.sm),
             child: Icon(
-              pending
-                  ? Icons.notifications_active_outlined
-                  : Icons.check_circle_outline_rounded,
-              color: pending
-                  ? context.localShareDesign.warning
-                  : theme.colorScheme.onPrimaryContainer,
+              pending ? Icons.notifications_active_outlined : Icons.check_circle_outline_rounded,
+              color: pending ? context.localShareDesign.warning : theme.colorScheme.onPrimaryContainer,
             ),
           ),
         ),
@@ -1010,21 +936,17 @@ class _RequestCard extends StatelessWidget {
           );
 
     return LocalShareSurface(
-      style: pending
-          ? LocalShareSurfaceStyle.tinted
-          : LocalShareSurfaceStyle.subtle,
+      style: pending ? LocalShareSurfaceStyle.tinted : LocalShareSurfaceStyle.subtle,
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final compact = constraints.maxWidth < 520 ||
-              MediaQuery.textScalerOf(context).scale(1) > 1.25;
+          final compact = constraints.maxWidth < 520 || MediaQuery.textScalerOf(context).scale(1) > 1.25;
           if (compact) {
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 details,
                 const SizedBox(height: LocalShareSpacing.sm),
-                Align(
-                    alignment: AlignmentDirectional.centerEnd, child: actions),
+                Align(alignment: AlignmentDirectional.centerEnd, child: actions),
               ],
             );
           }
@@ -1043,18 +965,14 @@ class _RequestCard extends StatelessWidget {
 
 class _SettingsSection extends StatelessWidget {
   const _SettingsSection({
-    required this.encrypted,
     required this.autoAccept,
     required this.pin,
-    required this.onEncryptionChanged,
     required this.onAutoAcceptChanged,
     required this.onPinChanged,
   });
 
-  final bool encrypted;
   final bool autoAccept;
   final String? pin;
-  final ValueChanged<bool> onEncryptionChanged;
   final ValueChanged<bool> onAutoAcceptChanged;
   final ValueChanged<bool> onPinChanged;
 
@@ -1073,23 +991,6 @@ class _SettingsSection extends StatelessWidget {
             padding: EdgeInsets.zero,
           ),
           const SizedBox(height: LocalShareSpacing.sm),
-          _SettingToggle(
-            icon: encrypted
-                ? Icons.lock_outline_rounded
-                : Icons.lock_open_rounded,
-            title: copy.httpsTitle,
-            subtitle: copy.httpsSubtitle,
-            value: encrypted,
-            onChanged: onEncryptionChanged,
-          ),
-          if (encrypted) ...[
-            const SizedBox(height: LocalShareSpacing.xs),
-            _SettingNotice(
-              icon: Icons.info_outline_rounded,
-              text: copy.selfSignedHint,
-              color: context.localShareDesign.warning,
-            ),
-          ],
           const Divider(height: LocalShareSpacing.lg),
           _SettingToggle(
             icon: Icons.flash_on_outlined,
@@ -1205,47 +1106,6 @@ class _SettingToggle extends StatelessWidget {
   }
 }
 
-class _SettingNotice extends StatelessWidget {
-  const _SettingNotice({
-    required this.icon,
-    required this.text,
-    required this.color,
-  });
-
-  final IconData icon;
-  final String text;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(LocalShareRadii.medium),
-        border: Border.all(color: color.withOpacity(0.22)),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(LocalShareSpacing.sm),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(icon, size: 19, color: color),
-            const SizedBox(width: LocalShareSpacing.xs),
-            Expanded(
-              child: Text(
-                text,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: color,
-                    ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 @immutable
 class _WebSendCopy {
   const _WebSendCopy(this.isChinese);
@@ -1258,36 +1118,21 @@ class _WebSendCopy {
   final bool isChinese;
 
   String get pageTitle => isChinese ? '网页发送' : 'Web sharing';
-  String get waitingForBrowser =>
-      isChinese ? '等待浏览器连接' : 'Waiting for a browser';
+  String get waitingForBrowser => isChinese ? '等待浏览器连接' : 'Waiting for a browser';
   String get readyTitle => isChinese ? '分享链接已就绪' : 'Share link is ready';
   String get readySubtitle => isChinese
       ? '接收端连接同一局域网后打开下方地址，无需安装 LocalShare。'
       : 'On the same local network, open an address below. The receiver does not need LocalShare installed.';
-  String get initializingTitle =>
-      isChinese ? '正在准备分享链接' : 'Preparing your share link';
-  String get initializingSubtitle => isChinese
-      ? '正在启动本机网页服务，请稍候。'
-      : 'Starting the local web service. This should only take a moment.';
+  String get initializingTitle => isChinese ? '正在准备分享链接' : 'Preparing your share link';
+  String get initializingSubtitle => isChinese ? '正在启动本机网页服务，请稍候。' : 'Starting the local web service. This should only take a moment.';
   String get stoppingTitle => isChinese ? '正在结束网页发送' : 'Stopping web sharing';
-  String get stoppingSubtitle => isChinese
-      ? '正在关闭网页会话并恢复常规文件传输服务。'
-      : 'Closing the web session and restoring regular file transfers.';
-  String get errorTitle =>
-      isChinese ? '网页发送启动失败' : 'Web sharing could not start';
-  String get errorSubtitle => isChinese
-      ? '请检查端口和网络权限，然后重试。'
-      : 'Check the port and local-network permissions, then try again.';
-  String get missingServerState => isChinese
-      ? '网页服务状态丢失，请重新启动。'
-      : 'The web service state is unavailable. Please restart it.';
+  String get stoppingSubtitle => isChinese ? '正在关闭网页会话；常规文件传输服务不受影响。' : 'Closing the web session; regular file transfers are not affected.';
+  String get errorTitle => isChinese ? '网页发送启动失败' : 'Web sharing could not start';
+  String get errorSubtitle => isChinese ? '请检查端口和网络权限，然后重试。' : 'Check the port and local-network permissions, then try again.';
+  String get missingServerState => isChinese ? '网页服务状态丢失，请重新启动。' : 'The web service state is unavailable. Please restart it.';
   String get retry => isChinese ? '重试' : 'Try again';
-  String fileCount(int count) => isChinese
-      ? '已共享 $count 项内容'
-      : '$count item${count == 1 ? '' : 's'} shared';
-  String pendingCount(int count) => isChinese
-      ? '$count 个待处理请求'
-      : '$count pending request${count == 1 ? '' : 's'}';
+  String fileCount(int count) => isChinese ? '已共享 $count 项内容' : '$count item${count == 1 ? '' : 's'} shared';
+  String pendingCount(int count) => isChinese ? '$count 个待处理请求' : '$count pending request${count == 1 ? '' : 's'}';
   String get addressesTitle => isChinese ? '访问地址' : 'Open an address';
   String addressesSubtitle(int count) => isChinese
       ? count == 0
@@ -1297,21 +1142,16 @@ class _WebSendCopy {
           ? 'Waiting for an available local address'
           : 'Use any address or show its QR code to the receiver';
   String get noNetwork => isChinese ? '暂无可用地址' : 'No address available';
-  String get noNetworkHint => isChinese
-      ? '请确认设备已连接 Wi-Fi 或有线局域网。'
-      : 'Connect this device to Wi-Fi or a wired local network.';
+  String get noNetworkHint => isChinese ? '请确认设备已连接 Wi-Fi 或有线局域网。' : 'Connect this device to Wi-Fi or a wired local network.';
   String get httpSummary => isChinese
       ? '地址仅在当前局域网内可用；需要加密时可在设置中启用 HTTPS。'
       : 'These addresses only work on this local network. Enable HTTPS below when encryption is needed.';
-  String get httpsSummary => isChinese
-      ? '当前连接已启用 HTTPS，浏览器可能提示自签名证书。'
-      : 'HTTPS is enabled. The browser may warn about the self-signed certificate.';
+  String get httpsSummary => isChinese ? '当前连接已启用 HTTPS，浏览器可能提示自签名证书。' : 'HTTPS is enabled. The browser may warn about the self-signed certificate.';
   String get showQr => isChinese ? '二维码' : 'QR code';
   String get copyLink => isChinese ? '复制地址' : 'Copy address';
   String get openBrowser => isChinese ? '在浏览器打开' : 'Open in browser';
   String get largeDisplay => isChinese ? '大屏展示' : 'Large display';
-  String get browserError =>
-      isChinese ? '无法打开浏览器' : 'The browser could not be opened';
+  String get browserError => isChinese ? '无法打开浏览器' : 'The browser could not be opened';
   String get requestsTitle => isChinese ? '连接请求' : 'Connection requests';
   String requestsSubtitle(int total, int pending) => isChinese
       ? total == 0
@@ -1321,31 +1161,21 @@ class _WebSendCopy {
           ? 'Browser connections will appear here'
           : '$total connection${total == 1 ? '' : 's'}, $pending waiting for approval';
   String get noRequests => isChinese ? '还没有连接请求' : 'No requests yet';
-  String get noRequestsHint => isChinese
-      ? '让接收端打开上方地址，连接请求会实时出现。'
-      : 'Ask the receiver to open an address above. Requests appear here in real time.';
+  String get noRequestsHint => isChinese ? '让接收端打开上方地址，连接请求会实时出现。' : 'Ask the receiver to open an address above. Requests appear here in real time.';
   String get accept => isChinese ? '允许' : 'Allow';
   String get decline => isChinese ? '拒绝' : 'Decline';
   String get accepted => isChinese ? '已允许' : 'Allowed';
   String get settingsTitle => isChinese ? '分享设置' : 'Sharing settings';
-  String get settingsSubtitle =>
-      isChinese ? '更改安全方式和请求审批规则' : 'Control security and request approvals';
+  String get settingsSubtitle => isChinese ? '更改安全方式和请求审批规则' : 'Control security and request approvals';
   String get httpsTitle => isChinese ? '启用 HTTPS' : 'Enable HTTPS';
-  String get httpsSubtitle => isChinese
-      ? '加密浏览器与这台设备之间的传输'
-      : 'Encrypt traffic between the browser and this device';
+  String get httpsSubtitle => isChinese ? '加密浏览器与这台设备之间的传输' : 'Encrypt traffic between the browser and this device';
   String get selfSignedHint => isChinese
       ? 'HTTPS 使用 LocalShare 在本机生成的自签名证书。浏览器出现安全提示属于正常现象，请只在可信局域网中继续。'
       : 'HTTPS uses a self-signed certificate generated locally by LocalShare. A browser warning is expected; continue only on a trusted local network.';
-  String get autoAcceptTitle =>
-      isChinese ? '自动允许请求' : 'Automatically allow requests';
-  String get autoAcceptSubtitle => isChinese
-      ? '跳过逐个确认，适合仅有可信设备的网络'
-      : 'Skip individual approval on networks with trusted devices only';
+  String get autoAcceptTitle => isChinese ? '自动允许请求' : 'Automatically allow requests';
+  String get autoAcceptSubtitle => isChinese ? '跳过逐个确认，适合仅有可信设备的网络' : 'Skip individual approval on networks with trusted devices only';
   String get pinTitle => isChinese ? '要求访问码' : 'Require an access code';
-  String get pinSubtitle => isChinese
-      ? '接收端必须输入访问码才能查看内容'
-      : 'Receivers must enter a code before viewing the shared items';
+  String get pinSubtitle => isChinese ? '接收端必须输入访问码才能查看内容' : 'Receivers must enter a code before viewing the shared items';
   String get accessCode => isChinese ? '当前访问码' : 'Current access code';
   String get endSharing => isChinese ? '结束网页发送' : 'End web sharing';
 }

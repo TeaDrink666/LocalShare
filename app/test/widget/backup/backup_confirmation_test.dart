@@ -12,8 +12,7 @@ import 'package:localsend_app/features/backup/manifest/manifest.dart';
 import 'package:localsend_app/model/state/nearby_devices_state.dart';
 import 'package:localsend_app/pages/backup/backup_page.dart';
 import 'package:localsend_app/util/file_size_helper.dart';
-import 'package:localsend_app/util/native/channel/android_channel.dart'
-    as android_channel;
+import 'package:localsend_app/util/native/channel/android_channel.dart' as android_channel;
 import 'package:refena_flutter/refena_flutter.dart';
 
 void main() {
@@ -95,8 +94,7 @@ void main() {
     expect(find.text(LocalShareCopy.confirmSavedTitle), findsNothing);
   });
 
-  testWidgets('manual confirmation appears only after returning from web send',
-      (
+  testWidgets('manual confirmation appears only after returning from web send', (
     tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(1000, 1000));
@@ -217,6 +215,145 @@ void main() {
       value: pending.totalBytes.asReadableFileSize,
     );
   });
+
+  testWidgets(
+      'manual confirmation confirms only the selected items and keeps '
+      'the rest pending', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1000, 1000));
+    late Directory temporaryDirectory;
+    late BackupProfileStore store;
+    await tester.runAsync(() async {
+      temporaryDirectory = await Directory.systemTemp.createTemp(
+        'localshare-per-file-confirmation-test-',
+      );
+      store = BackupProfileStore(rootDirectory: temporaryDirectory);
+    });
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+      await tester.runAsync(() async {
+        if (await temporaryDirectory.exists()) {
+          await temporaryDirectory.delete(recursive: true);
+        }
+      });
+    });
+
+    await tester.pumpWidget(
+      RefenaScope(
+        child: MaterialApp(
+          home: BackupPage(
+            openStore: () async => store,
+            isAndroidOverride: true,
+            onOpenNativeTransfer: () async {},
+            onOpenReceive: () async {},
+            requestPermission: ({
+              required includeImages,
+              required includeVideos,
+            }) async =>
+                const BackupMediaPermissionResult(
+              allowed: true,
+              limited: false,
+              permanentlyDenied: false,
+            ),
+            scanMedia: ({
+              required includeImages,
+              required includeVideos,
+              required onProgress,
+            }) async {
+              onProgress(2);
+              return _twoItemScan();
+            },
+            scanNearbyDevices: (_) async {},
+            nearbyDevicesOverride: const NearbyDevicesState(
+              runningFavoriteScan: false,
+              runningIps: {},
+              devices: {},
+            ),
+            sourceDeviceFingerprint: () => 'phone-1',
+            openWebSender: (_, files) async {
+              expect(files, hasLength(2));
+            },
+          ),
+        ),
+      ),
+    );
+
+    await _pumpUntilFound(tester, find.text(LocalShareCopy.scanForChanges));
+    await tester.tap(find.text(LocalShareCopy.scanForChanges));
+    await _pumpUntilFound(tester, find.byKey(const Key('backup-web-send')));
+    await tester.tap(find.byKey(const Key('backup-web-send')));
+    await _pumpUntilFound(
+      tester,
+      find.text(LocalShareCopy.pendingConfirmation),
+    );
+    await _pumpUntilManualConfirmationEnabled(tester);
+
+    await tester.ensureVisible(find.text(LocalShareCopy.confirmSaved));
+    await tester.tap(find.text(LocalShareCopy.confirmSaved));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    // The dialog lists every pending item with a checkbox.
+    expect(
+      find.byKey(const Key('backup-confirm-item-external:1')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const Key('backup-confirm-item-external:2')),
+      findsOneWidget,
+    );
+    expect(
+      find.text(LocalShareCopy.confirmSelected(2)),
+      findsOneWidget,
+    );
+
+    // Unchecking every item disables confirmation.
+    await tester.tap(find.byKey(const Key('backup-confirm-select-all')));
+    await tester.pump();
+    final disabledButton = tester.widget<FilledButton>(
+      find.byKey(const Key('backup-confirm-selected')),
+    );
+    expect(disabledButton.onPressed, isNull);
+
+    // Re-select all, then uncheck only the first item.
+    await tester.tap(find.byKey(const Key('backup-confirm-select-all')));
+    await tester.pump();
+    await tester.tap(
+      find.descendant(
+        of: find.byKey(const Key('backup-confirm-item-external:1')),
+        matching: find.byType(Checkbox),
+      ),
+    );
+    await tester.pump();
+    expect(
+      find.text(LocalShareCopy.confirmSelected(1)),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.byKey(const Key('backup-confirm-selected')));
+    await _pumpUntilFound(
+      tester,
+      find.text(LocalShareCopy.pendingConfirmationDescription(1)),
+    );
+
+    final index = await tester.runAsync(store.loadIndex);
+    final profile = index!.selectedProfile!;
+    final ledger = await tester.runAsync(
+      () => store.loadConfirmedLedger(profile.id),
+    );
+    final pending = await tester.runAsync(
+      () => store.loadPending(profile.id),
+    );
+
+    expect(ledger, hasLength(1));
+    expect(ledger!.single.mediaKey, 'external:2');
+    expect(pending, isNotNull);
+    expect(pending!.itemCount, 1);
+    expect(pending.items.single.snapshotItem.mediaKey, 'external:1');
+    expect(
+      find.text(LocalShareCopy.pendingConfirmationDescription(1)),
+      findsOneWidget,
+    );
+  });
 }
 
 AndroidMediaCatalogScan _twoItemScan() {
@@ -275,8 +412,7 @@ Future<void> _pumpUntilManualConfirmationEnabled(WidgetTester tester) async {
       of: label,
       matching: find.byWidgetPredicate((widget) => widget is FilledButton),
     );
-    if (button.evaluate().isNotEmpty &&
-        tester.widget<FilledButton>(button).onPressed != null) {
+    if (button.evaluate().isNotEmpty && tester.widget<FilledButton>(button).onPressed != null) {
       return;
     }
     await tester.runAsync(

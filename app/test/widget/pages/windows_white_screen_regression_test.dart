@@ -1,28 +1,31 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:localsend_app/config/localshare_copy.dart';
+import 'package:localsend_app/model/state/nearby_devices_state.dart';
 import 'package:localsend_app/pages/dashboard_page.dart';
 import 'package:localsend_app/pages/home_page.dart';
 import 'package:localsend_app/pages/home_page_controller.dart';
 import 'package:localsend_app/pages/tabs/receive_tab_vm.dart';
+import 'package:localsend_app/provider/persistence_provider.dart';
 import 'package:refena_flutter/refena_flutter.dart';
+import '../../mocks.mocks.dart';
 
 void main() {
   group('Windows white-screen layout regressions', () {
-    test('main navigation exposes only the four primary tasks', () {
+    test('main navigation exposes home plus the four primary tasks', () {
       expect(
         HomeTab.values,
         const [
+          HomeTab.home,
+          HomeTab.tasks,
           HomeTab.send,
-          HomeTab.receive,
           HomeTab.backup,
           HomeTab.settings,
         ],
       );
     });
 
-    testWidgets('extended brand mark lays out inside a desktop navigation rail',
-        (tester) async {
+    testWidgets('extended brand mark lays out inside a desktop navigation rail', (tester) async {
       await tester.binding.setSurfaceSize(const Size(1400, 900));
       addTearDown(() => tester.binding.setSurfaceSize(null));
 
@@ -61,8 +64,7 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('dashboard accepts the unbounded height from its sliver',
-        (tester) async {
+    testWidgets('dashboard accepts the unbounded height from its sliver', (tester) async {
       await tester.binding.setSurfaceSize(const Size(1200, 800));
       addTearDown(() => tester.binding.setSurfaceSize(null));
 
@@ -70,12 +72,18 @@ void main() {
         RefenaScope(
           overrides: [
             receiveTabVmProvider.overrideWithBuilder((_) => _dashboardVm),
+            persistenceProvider.overrideWithValue(MockPersistenceService()),
+            dashboardDevicesProvider.overrideWithBuilder((_) => _devices),
           ],
           child: MaterialApp(
             home: Scaffold(
               body: DashboardPage(
                 onOpenNativeTransfer: _doNothing,
                 onOpenWebTransfer: _doNothing,
+                onOpenWebReceive: _doNothing,
+                onOpenTasks: _doNothing,
+                onOpenSettings: _doNothing,
+                onRefreshDevices: _doNothing,
                 onOpenBackup: _doNothing,
               ),
             ),
@@ -83,13 +91,11 @@ void main() {
         ),
       );
 
-      expect(find.byType(CustomScrollView), findsOneWidget);
-      expect(find.byType(SliverToBoxAdapter), findsOneWidget);
+      expect(find.byType(ListView), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('phone backup stays visible on a narrow Android-sized screen',
-        (tester) async {
+    testWidgets('phone backup stays visible on a narrow Android-sized screen', (tester) async {
       await tester.binding.setSurfaceSize(const Size(320, 700));
       addTearDown(() => tester.binding.setSurfaceSize(null));
       var openedBackup = false;
@@ -98,6 +104,8 @@ void main() {
         RefenaScope(
           overrides: [
             receiveTabVmProvider.overrideWithBuilder((_) => _dashboardVm),
+            persistenceProvider.overrideWithValue(MockPersistenceService()),
+            dashboardDevicesProvider.overrideWithBuilder((_) => _devices),
           ],
           child: MaterialApp(
             builder: (context, child) => MediaQuery(
@@ -110,6 +118,10 @@ void main() {
               body: DashboardPage(
                 onOpenNativeTransfer: _doNothing,
                 onOpenWebTransfer: _doNothing,
+                onOpenWebReceive: _doNothing,
+                onOpenTasks: _doNothing,
+                onOpenSettings: _doNothing,
+                onRefreshDevices: _doNothing,
                 onOpenBackup: () async {
                   openedBackup = true;
                 },
@@ -129,25 +141,25 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('tab changes are safe before the page controller attaches',
-        (tester) async {
+    testWidgets('tab changes are safe before the page controller attaches', (tester) async {
       final controller = ReduxNotifier.test(redux: HomePageController());
       addTearDown(controller.state.controller.dispose);
 
       expect(controller.state.controller.hasClients, isFalse);
+      expect(controller.state.currentTab, HomeTab.home);
       final initialState = controller.state;
 
       expect(
-        () => controller.dispatch(ChangeTabAction(HomeTab.send)),
+        () => controller.dispatch(ChangeTabAction(HomeTab.home)),
         returnsNormally,
       );
       expect(controller.state, same(initialState));
 
       expect(
-        () => controller.dispatch(ChangeTabAction(HomeTab.receive)),
+        () => controller.dispatch(ChangeTabAction(HomeTab.tasks)),
         returnsNormally,
       );
-      expect(controller.state.currentTab, HomeTab.receive);
+      expect(controller.state.currentTab, HomeTab.tasks);
 
       await tester.pump();
       expect(tester.takeException(), isNull);
@@ -169,3 +181,5 @@ final _dashboardVm = ReceiveTabVm(
 );
 
 Future<void> _doNothing() async {}
+
+const _devices = NearbyDevicesState(runningFavoriteScan: false, runningIps: {}, devices: {});

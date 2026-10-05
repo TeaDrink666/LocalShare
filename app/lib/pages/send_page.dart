@@ -58,9 +58,7 @@ class _SendPageState extends State<SendPage> with Refena {
 
   @override
   Widget build(BuildContext context) {
-    final sendState = ref
-        .watch(sendProvider.select((state) => state[widget.sessionId]),
-            listener: (prev, next) {
+    final sendState = ref.watch(sendProvider.select((state) => state[widget.sessionId]), listener: (prev, next) {
       final prevStatus = prev[widget.sessionId]?.status;
       final nextStatus = next[widget.sessionId]?.status;
       if (prevStatus != nextStatus) {
@@ -69,8 +67,8 @@ class _SendPageState extends State<SendPage> with Refena {
       }
     });
     if (sendState == null && _myDevice == null && _targetDevice == null) {
-      return Scaffold(
-        body: Container(),
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
       );
     }
     final myDevice = ref.watch(deviceFullInfoProvider);
@@ -82,15 +80,11 @@ class _SendPageState extends State<SendPage> with Refena {
 
     return PopScope(
       onPopInvokedWithResult: (didPop, result) {
-        if (didPop && widget.closeSessionOnClose) {
-          _cancel();
-        }
+        // Closing details leaves the application-owned transfer running.
       },
       canPop: true,
       child: Scaffold(
-        appBar: widget.showAppBar
-            ? AppBar(title: Text(_SendPageCopy.pageTitle))
-            : null,
+        appBar: widget.showAppBar ? AppBar(title: Text(_SendPageCopy.pageTitle)) : null,
         body: LocalSharePageBackground(
           child: SafeArea(
             child: LayoutBuilder(
@@ -107,8 +101,7 @@ class _SendPageState extends State<SendPage> with Refena {
                     child: ConstrainedBox(
                       constraints: BoxConstraints(
                         maxWidth: 920,
-                        minHeight: (viewport.maxHeight - verticalPadding * 2)
-                            .clamp(0.0, double.infinity),
+                        minHeight: (viewport.maxHeight - verticalPadding * 2).clamp(0.0, double.infinity),
                       ),
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
@@ -119,8 +112,7 @@ class _SendPageState extends State<SendPage> with Refena {
                           _DeviceRelationshipCard(
                             myDevice: myDevice,
                             targetDevice: targetDevice,
-                            targetName: targetFavoriteEntry?.alias ??
-                                targetDevice.alias,
+                            targetName: targetFavoriteEntry?.alias ?? targetDevice.alias,
                           ),
                           if (sendState != null) ...[
                             const SizedBox(height: 18),
@@ -129,8 +121,7 @@ class _SendPageState extends State<SendPage> with Refena {
                               delay: const Duration(milliseconds: 250),
                               child: _StatusCard(
                                 status: sendState.status,
-                                targetName: targetFavoriteEntry?.alias ??
-                                    targetDevice.alias,
+                                targetName: targetFavoriteEntry?.alias ?? targetDevice.alias,
                                 errorMessage: sendState.errorMessage,
                                 onShowError: sendState.errorMessage == null
                                     ? null
@@ -280,9 +271,7 @@ class _DeviceRelationshipCard extends StatelessWidget {
               shape: BoxShape.circle,
             ),
             child: Icon(
-              horizontal
-                  ? Icons.arrow_forward_rounded
-                  : Icons.arrow_downward_rounded,
+              horizontal ? Icons.arrow_forward_rounded : Icons.arrow_downward_rounded,
               color: scheme.onPrimaryContainer,
             ),
           );
@@ -378,9 +367,7 @@ class _DeviceCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  model == null || model.isEmpty
-                      ? device.ip
-                      : '$model · ${device.ip}',
+                  model == null || model.isEmpty ? device.ip : '$model · ${device.ip}',
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: theme.textTheme.bodySmall?.copyWith(
@@ -510,8 +497,7 @@ class _PageAction extends StatelessWidget {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        if (constraints.maxWidth < 440 ||
-            MediaQuery.textScalerOf(context).scale(16) > 20) {
+        if (constraints.maxWidth < 440 || MediaQuery.textScalerOf(context).scale(16) > 20) {
           return SizedBox(width: double.infinity, child: button);
         }
         return Align(alignment: Alignment.centerRight, child: button);
@@ -601,46 +587,29 @@ abstract final class _SendPageCopy {
   static bool get _zh => LocalShareCopy.isChinese;
 
   static String get pageTitle => _zh ? '设备互传' : 'Device transfer';
-  static String get pageSubtitle => _zh
-      ? '正在通过局域网建立安全的点对点连接。'
-      : 'Establishing a secure peer-to-peer connection over your LAN.';
+  static String get pageSubtitle => _zh ? '正在通过局域网建立安全的点对点连接。' : 'Establishing a secure peer-to-peer connection over your LAN.';
   static String get thisDevice => _zh ? '当前设备' : 'This device';
   static String get receivingDevice => _zh ? '接收设备' : 'Receiving device';
   static String get waitingTitle => _zh ? '等待对方确认' : 'Waiting for approval';
-  static String waitingDescription(String name) => _zh
-      ? '已向 $name 发出传输请求，请在对方设备上确认。'
-      : 'A transfer request was sent to $name. Approve it on the receiving device.';
+  static String waitingDescription(String name) =>
+      _zh ? '已向 $name 发出传输请求，请在对方设备上确认。' : 'A transfer request was sent to $name. Approve it on the receiving device.';
   static String get busyTitle => _zh ? '对方设备正忙' : 'Receiving device is busy';
-  static String get busyDescription => _zh
-      ? '对方正在处理另一项传输，请稍后重试。'
-      : 'The device is handling another transfer. Try again shortly.';
+  static String get busyDescription => _zh ? '对方正在处理另一项传输，请稍后重试。' : 'The device is handling another transfer. Try again shortly.';
   static String get declinedTitle => _zh ? '对方已拒绝接收' : 'Request declined';
-  static String declinedDescription(String name) =>
-      _zh ? '$name 没有接受本次传输请求。' : '$name did not accept this transfer request.';
-  static String get tooManyAttemptsTitle =>
-      _zh ? '尝试次数过多' : 'Too many attempts';
-  static String get tooManyAttemptsDescription => _zh
-      ? '验证未通过，连接已停止。请确认 PIN 后重新发送。'
-      : 'Verification failed and the connection was stopped. Check the PIN and try again.';
-  static String get errorTitle =>
-      _zh ? '传输出现问题' : 'Transfer encountered a problem';
-  static String get errorDescription => _zh
-      ? '部分内容未能完成传输，你可以查看错误详情。'
-      : 'Some items could not be transferred. Review the error details.';
+  static String declinedDescription(String name) => _zh ? '$name 没有接受本次传输请求。' : '$name did not accept this transfer request.';
+  static String get tooManyAttemptsTitle => _zh ? '尝试次数过多' : 'Too many attempts';
+  static String get tooManyAttemptsDescription =>
+      _zh ? '验证未通过，连接已停止。请确认 PIN 后重新发送。' : 'Verification failed and the connection was stopped. Check the PIN and try again.';
+  static String get errorTitle => _zh ? '传输出现问题' : 'Transfer encountered a problem';
+  static String get errorDescription => _zh ? '部分内容未能完成传输，你可以查看错误详情。' : 'Some items could not be transferred. Review the error details.';
   static String get startingTitle => _zh ? '正在开始传输' : 'Starting transfer';
-  static String get startingDescription => _zh
-      ? '连接已确认，正在准备文件传输。'
-      : 'The connection is approved and the files are being prepared.';
+  static String get startingDescription => _zh ? '连接已确认，正在准备文件传输。' : 'The connection is approved and the files are being prepared.';
   static String get finishedTitle => _zh ? '传输已完成' : 'Transfer complete';
-  static String get finishedDescription =>
-      _zh ? '所有内容均已发送到对方设备。' : 'All items were sent to the receiving device.';
+  static String get finishedDescription => _zh ? '所有内容均已发送到对方设备。' : 'All items were sent to the receiving device.';
   static String get canceledTitle => _zh ? '传输已取消' : 'Transfer canceled';
-  static String get canceledDescription =>
-      _zh ? '你已停止本次传输。' : 'You stopped this transfer.';
-  static String get receiverCanceledTitle =>
-      _zh ? '对方已取消传输' : 'Canceled by receiver';
-  static String get receiverCanceledDescription =>
-      _zh ? '接收设备已停止本次传输。' : 'The receiving device stopped this transfer.';
+  static String get canceledDescription => _zh ? '你已停止本次传输。' : 'You stopped this transfer.';
+  static String get receiverCanceledTitle => _zh ? '对方已取消传输' : 'Canceled by receiver';
+  static String get receiverCanceledDescription => _zh ? '接收设备已停止本次传输。' : 'The receiving device stopped this transfer.';
   static String get viewDetails => _zh ? '查看错误详情' : 'View error details';
   static String get cancel => _zh ? '取消发送' : 'Cancel transfer';
   static String get close => _zh ? '关闭' : 'Close';

@@ -8,12 +8,17 @@ import 'package:common/model/file_type.dart';
 import 'package:localsend_app/model/state/send/web/web_send_file.dart';
 import 'package:localsend_app/model/state/send/web/web_send_session.dart';
 import 'package:localsend_app/model/state/send/web/web_send_state.dart';
-import 'package:localsend_app/model/state/server/server_state.dart';
-import 'package:localsend_app/provider/network/server/controller/send_controller.dart';
-import 'package:localsend_app/provider/network/server/server_utils.dart';
+import 'package:localsend_app/model/state/web_gateway/web_gateway_state.dart';
+import 'package:localsend_app/provider/network/web_gateway/controller/web_gateway_controller.dart';
+import 'package:localsend_app/provider/network/web_gateway/web_gateway_utils.dart';
+import 'package:localsend_app/provider/persistence_provider.dart';
 import 'package:localsend_app/util/simple_server.dart';
+import 'package:mockito/mockito.dart';
+import 'package:refena_flutter/refena_flutter.dart';
 import 'package:test/test.dart';
 import 'package:uri_content/uri_content.dart';
+
+import '../../../../mocks.mocks.dart';
 
 void main() {
   group('web download route', () {
@@ -73,8 +78,7 @@ void main() {
         'localshare-send-controller-',
       );
       addTearDown(() => tempDirectory.delete(recursive: true));
-      final diskFile =
-          File('${tempDirectory.path}${Platform.pathSeparator}a.bin');
+      final diskFile = File('${tempDirectory.path}${Platform.pathSeparator}a.bin');
       await diskFile.writeAsBytes(List<int>.generate(7, (index) => index));
 
       final harness = await _DownloadHarness.start(
@@ -158,8 +162,7 @@ void main() {
   });
 
   group('web download-all route', () {
-    test('streams memory, disk, and unknown-length content URI files as ZIP',
-        () async {
+    test('streams memory, disk, and unknown-length content URI files as ZIP', () async {
       final tempDirectory = await Directory.systemTemp.createTemp(
         'localshare-download-all-',
       );
@@ -208,8 +211,7 @@ void main() {
       expect(response.statusCode, HttpStatus.ok);
       expect(response.headers.contentType?.mimeType, 'application/zip');
       expect(response.headers.value(HttpHeaders.acceptRangesHeader), 'none');
-      expect(
-          response.headers.value(HttpHeaders.cacheControlHeader), 'no-store');
+      expect(response.headers.value(HttpHeaders.cacheControlHeader), 'no-store');
       expect(
         response.headers.value('content-disposition'),
         'attachment; filename="LocalShare-files.zip"; '
@@ -240,8 +242,7 @@ void main() {
       expect(uriContent.streamRequests, 1);
     });
 
-    test('sanitizes Windows names and resolves case-insensitive collisions',
-        () async {
+    test('rejects unrepresentable archive names without silently renaming', () async {
       final harness = await _DownloadHarness.startFiles({
         'reserved': _webFile(
           id: 'reserved',
@@ -261,19 +262,9 @@ void main() {
       });
       addTearDown(harness.close);
 
-      final archive = ZipDecoder().decodeBytes(
-        await _readBody(await harness.downloadAll()),
-        verify: true,
-      );
-      final names = archive.files.map((file) => file.name).toList();
-
-      expect(names.first, '_CON/Album_2026_/_NUL.txt/photo__');
-      expect(names[1], matches(r'^Camera/a_~[0-9a-f]{8}\.jpg$'));
-      expect(names[2], matches(r'^camera/A_~[0-9a-f]{8}\.jpg$'));
-      expect(names.map((name) => name.toLowerCase()).toSet(), hasLength(3));
-      expect(archive.files[0].content, [1]);
-      expect(archive.files[1].content, [2]);
-      expect(archive.files[2].content, [3]);
+      final response = await harness.downloadAll();
+      expect(response.statusCode, 422);
+      await _readBody(response);
     });
 
     test('requires an active session belonging to the request IP', () async {
@@ -298,8 +289,7 @@ void main() {
       expect(await _readBody(wrongIpResponse), isNotEmpty);
     });
 
-    test('clearly rejects an unknown content URI size before streaming',
-        () async {
+    test('clearly rejects an unknown content URI size before streaming', () async {
       final uriContent = _FakeUriContent(
         length: null,
         chunks: const [
@@ -390,16 +380,19 @@ class _DownloadHarness {
   }) async {
     final httpServer = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     final routes = SimpleServerRouteBuilder();
-    late ServerState state;
+    late WebGatewayState state;
     late SimpleServer simpleServer;
-    final serverUtils = ServerUtils(
-      refFunc: () => throw UnsupportedError('Provider ref is not used.'),
+    final persistence = MockPersistenceService();
+    when(persistence.getTaskConcurrency()).thenReturn(2);
+    final container = RefenaContainer(overrides: [persistenceProvider.overrideWithValue(persistence)]);
+    final gatewayUtils = WebGatewayUtils(
+      refFunc: () => container,
       getState: () => state,
       getStateOrNull: () => state,
       setState: (builder) => state = builder(state)!,
     );
-    SendController(
-      serverUtils,
+    WebGatewayController(
+      gatewayUtils,
       uriContent: uriContent ?? _FakeUriContent(length: null, chunks: const []),
     ).installRoutes(
       router: routes,
@@ -407,12 +400,9 @@ class _DownloadHarness {
       fingerprint: 'test-fingerprint',
     );
     simpleServer = SimpleServer.start(server: httpServer, routes: routes);
-    state = ServerState(
+    state = WebGatewayState(
       httpServer: simpleServer,
-      alias: 'LocalShare test',
       port: httpServer.port,
-      https: false,
-      session: null,
       webSendState: WebSendState(
         sessions: {
           _sessionId: WebSendSession(
@@ -427,7 +417,9 @@ class _DownloadHarness {
         pin: null,
         pinAttempts: const {},
       ),
+      receiveSession: null,
       pinAttempts: const {},
+      receivePinAttempts: const {},
     );
 
     return _DownloadHarness._(

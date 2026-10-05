@@ -1,4 +1,5 @@
 import 'dart:io';
+
 import 'package:common/constants.dart';
 import 'package:common/model/device.dart';
 import 'package:flutter/foundation.dart';
@@ -13,6 +14,7 @@ import 'package:localsend_app/pages/donation/donation_page.dart';
 import 'package:localsend_app/pages/language_page.dart';
 import 'package:localsend_app/pages/settings/network_interfaces_page.dart';
 import 'package:localsend_app/pages/tabs/settings_tab_controller.dart';
+import 'package:localsend_app/pages/tasks_page.dart';
 import 'package:localsend_app/provider/settings_provider.dart';
 import 'package:localsend_app/provider/version_provider.dart';
 import 'package:localsend_app/util/alias_generator.dart';
@@ -23,10 +25,10 @@ import 'package:localsend_app/util/native/platform_check.dart';
 import 'package:localsend_app/widget/custom_dropdown_button.dart';
 import 'package:localsend_app/widget/dialogs/encryption_disabled_notice.dart';
 import 'package:localsend_app/widget/dialogs/pin_dialog.dart';
-import 'package:localsend_app/widget/dialogs/quick_save_from_favorites_notice.dart';
-import 'package:localsend_app/widget/dialogs/quick_save_notice.dart';
 import 'package:localsend_app/widget/dialogs/text_field_tv.dart';
 import 'package:localsend_app/widget/dialogs/text_field_with_actions.dart';
+import 'package:localsend_app/widget/localshare_design/localshare_design.dart';
+import 'package:localsend_app/widget/receive_mode_menu.dart';
 import 'package:localsend_app/widget/responsive_list_view.dart';
 import 'package:refena_flutter/refena_flutter.dart';
 import 'package:routerino/routerino.dart';
@@ -48,6 +50,7 @@ class SettingsTab extends StatelessWidget {
           children: [
             _SettingsHeader(title: LocalShareCopy.settings),
             const SizedBox(height: 18),
+            const TaskSettingsPanel(),
             _SettingsSection(
               title: t.settingsTab.general.title,
               icon: Icons.palette_outlined,
@@ -148,27 +151,9 @@ class SettingsTab extends StatelessWidget {
               title: t.settingsTab.receive.title,
               icon: Icons.download_rounded,
               children: [
-                _BooleanEntry(
-                  label: t.settingsTab.receive.quickSave,
-                  value: vm.settings.quickSave,
-                  onChanged: (b) async {
-                    final old = vm.settings.quickSave;
-                    await ref.notifier(settingsProvider).setQuickSave(b);
-                    if (!old && b && context.mounted) {
-                      await QuickSaveNotice.open(context);
-                    }
-                  },
-                ),
-                _BooleanEntry(
-                  label: t.settingsTab.receive.quickSaveFromFavorites,
-                  value: vm.settings.quickSaveFromFavorites,
-                  onChanged: (b) async {
-                    final old = vm.settings.quickSaveFromFavorites;
-                    await ref.notifier(settingsProvider).setQuickSaveFromFavorites(b);
-                    if (!old && b && context.mounted) {
-                      await QuickSaveFromFavoritesNotice.open(context);
-                    }
-                  },
+                _SettingsEntry(
+                  label: taskText('接收方式', 'Receiving mode'),
+                  child: const ReceiveModeMenu(),
                 ),
                 _BooleanEntry(
                   label: t.settingsTab.receive.requirePin,
@@ -576,14 +561,9 @@ class _SettingsHeader extends StatelessWidget {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
 
-    return Container(
+    return LocalShareCard(
       key: const ValueKey('settings-compact-header'),
       padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: scheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: scheme.outlineVariant.withOpacity(0.55)),
-      ),
       child: Row(
         children: [
           Container(
@@ -824,9 +804,9 @@ class _SettingsSection extends StatelessWidget {
             clipBehavior: Clip.antiAlias,
             decoration: BoxDecoration(
               color: scheme.surfaceContainerLow,
-              borderRadius: BorderRadius.circular(15),
+              borderRadius: BorderRadius.circular(LocalShareRadii.large),
               border: Border.all(
-                color: scheme.outlineVariant.withOpacity(0.5),
+                color: scheme.outlineVariant.withOpacity(0.42),
               ),
             ),
             child: Padding(
@@ -860,8 +840,8 @@ class _AdvancedSettingsCard extends StatelessWidget {
       key: const ValueKey('advanced-settings-toggle'),
       decoration: BoxDecoration(
         color: scheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(15),
-        border: Border.all(color: scheme.outlineVariant.withOpacity(0.5)),
+        borderRadius: BorderRadius.circular(LocalShareRadii.large),
+        border: Border.all(color: scheme.outlineVariant.withOpacity(0.42)),
       ),
       child: SwitchListTile(
         contentPadding: const EdgeInsets.fromLTRB(12, 3, 6, 3),

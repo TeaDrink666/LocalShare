@@ -20,6 +20,18 @@ void main() {
   });
 
   tearDown(() async {
+    store.close();
+    // Windows can briefly keep the SQLite files locked after dispose.
+    for (var attempt = 0; attempt < 5; attempt++) {
+      try {
+        if (await rootDirectory.exists()) {
+          await rootDirectory.delete(recursive: true);
+        }
+        return;
+      } on PathAccessException {
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+      }
+    }
     if (await rootDirectory.exists()) {
       await rootDirectory.delete(recursive: true);
     }
@@ -55,6 +67,7 @@ void main() {
       await store.selectProfile(home.id);
 
       final reopened = BackupProfileStore(rootDirectory: rootDirectory);
+      addTearDown(reopened.close);
       final index = await reopened.loadIndex();
 
       expect(index.profiles.map((profile) => profile.id), [home.id, work.id]);
@@ -67,8 +80,7 @@ void main() {
       expect(index.selectedProfile?.displayName, 'Home PC');
     });
 
-    test('selecting a profile validates both its shape and existence',
-        () async {
+    test('selecting a profile validates both its shape and existence', () async {
       final profile = await store.createProfile('Home PC');
 
       await expectLater(
@@ -93,10 +105,7 @@ void main() {
       );
       expect(bound.deviceFingerprint, 'windows-home-fingerprint');
       expect(
-        (await store.loadIndex())
-            .profiles
-            .singleWhere((profile) => profile.id == home.id)
-            .deviceFingerprint,
+        (await store.loadIndex()).profiles.singleWhere((profile) => profile.id == home.id).deviceFingerprint,
         'windows-home-fingerprint',
       );
 
@@ -141,15 +150,11 @@ void main() {
 
       final index = await store.loadIndex();
       expect(
-        index.profiles
-            .singleWhere((item) => item.id == home.id)
-            .lastConfirmedAtUtc,
+        index.profiles.singleWhere((item) => item.id == home.id).lastConfirmedAtUtc,
         isNotNull,
       );
       expect(
-        index.profiles
-            .singleWhere((item) => item.id == work.id)
-            .lastConfirmedAtUtc,
+        index.profiles.singleWhere((item) => item.id == work.id).lastConfirmedAtUtc,
         isNull,
       );
     });
@@ -163,11 +168,6 @@ void main() {
         size: 500,
       );
       await store.savePending(_manifest(profile.id, [original]));
-      final pendingFile = File(
-        '${rootDirectory.path}${Platform.pathSeparator}'
-        'pending-${profile.id}.json',
-      );
-      final originalBytes = await pendingFile.readAsBytes();
 
       await expectLater(
         store.savePending(_manifest(profile.id, [replacement])),
@@ -180,7 +180,6 @@ void main() {
         ),
       );
 
-      expect(await pendingFile.readAsBytes(), originalBytes);
       expect(
         (await store.loadPending(profile.id))?.items.single.snapshotItem,
         original,
@@ -206,8 +205,7 @@ void main() {
       );
     });
 
-    test('saving or discarding pending data never advances the ledger',
-        () async {
+    test('saving or discarding pending data never advances the ledger', () async {
       final profile = await store.createProfile('Home PC');
       final original = _media(key: 'external:1', size: 100);
       await store.savePending(_manifest(profile.id, [original]));
@@ -219,8 +217,7 @@ void main() {
       );
 
       await store.confirmPending(profile.id);
-      final confirmedAt =
-          (await store.loadIndex()).selectedProfile!.lastConfirmedAtUtc;
+      final confirmedAt = (await store.loadIndex()).selectedProfile!.lastConfirmedAtUtc;
       final changed = _media(key: 'external:1', size: 200, modified: 20);
       await store.savePending(_manifest(profile.id, [changed]));
 
@@ -245,8 +242,7 @@ void main() {
       );
     });
 
-    test('partially confirms selected media and leaves the rest pending',
-        () async {
+    test('partially confirms selected media and leaves the rest pending', () async {
       final profile = await store.createProfile('Home PC');
       final first = _media(key: 'external:1', name: '1.jpg');
       final second = _media(key: 'external:2', name: '2.jpg');
@@ -264,8 +260,7 @@ void main() {
       );
 
       expect(
-        (await store.loadConfirmedLedger(profile.id))
-            .map((entry) => entry.mediaKey),
+        (await store.loadConfirmedLedger(profile.id)).map((entry) => entry.mediaKey),
         ['external:1', 'external:3'],
       );
       final remaining = await store.loadPending(profile.id);
@@ -283,14 +278,12 @@ void main() {
       expect(await store.confirmPending(profile.id), 1);
       expect(await store.loadPending(profile.id), isNull);
       expect(
-        (await store.loadConfirmedLedger(profile.id))
-            .map((entry) => entry.mediaKey),
+        (await store.loadConfirmedLedger(profile.id)).map((entry) => entry.mediaKey),
         ['external:1', 'external:2', 'external:3'],
       );
     });
 
-    test('empty and unknown partial confirmations do not mutate state',
-        () async {
+    test('empty and unknown partial confirmations do not mutate state', () async {
       final profile = await store.createProfile('Home PC');
       final item = _media(key: 'external:1');
       await store.savePending(_manifest(profile.id, [item]));
@@ -329,6 +322,7 @@ void main() {
       );
 
       final reopened = BackupProfileStore(rootDirectory: rootDirectory);
+      addTearDown(reopened.close);
       final index = await reopened.loadIndex();
 
       expect(index.selectedProfile?.lastConfirmedAtUtc, isNotNull);
@@ -399,40 +393,22 @@ void main() {
       }
     });
 
-    test('rejects malformed, duplicate, and dangling index entries', () async {
+    test('a corrupt legacy index is ignored and left untouched', () async {
       final indexFile = File(
         '${rootDirectory.path}${Platform.pathSeparator}profiles.json',
       );
-
       await indexFile.writeAsString('{not-json');
-      await expectLater(store.loadIndex(), throwsA(isA<FormatException>()));
+      store.close();
+      store = BackupProfileStore(rootDirectory: rootDirectory);
 
-      final profile = <String, Object?>{
-        'id': 'home-pc',
-        'displayName': 'Home PC',
-        'createdAtUtc': '2026-07-12T03:04:05.000Z',
-        'lastConfirmedAtUtc': null,
-      };
-      await indexFile.writeAsString(
-        jsonEncode({
-          'schemaVersion': 1,
-          'selectedProfileId': 'home-pc',
-          'profiles': [profile, profile],
-        }),
-      );
-      await expectLater(store.loadIndex(), throwsA(isA<FormatException>()));
-
-      await indexFile.writeAsString(
-        jsonEncode({
-          'schemaVersion': 1,
-          'selectedProfileId': 'missing-profile',
-          'profiles': [profile],
-        }),
-      );
-      await expectLater(store.loadIndex(), throwsA(isA<FormatException>()));
+      final index = await store.loadIndex();
+      expect(index.profiles, isEmpty);
+      expect(index.selectedProfileId, isNull);
+      // The corrupt legacy file is never destroyed or renamed.
+      expect(await indexFile.exists(), isTrue);
     });
 
-    test('rejects unknown profiles and mismatched manifest files', () async {
+    test('rejects unknown profiles and validates profile ids', () async {
       await expectLater(
         store.savePending(_manifest('missing-profile', [_media()])),
         throwsA(isA<StateError>()),
@@ -441,21 +417,69 @@ void main() {
         () => store.loadPending('../outside'),
         throwsArgumentError,
       );
+      expect(
+        () => store.loadConfirmedLedger('../outside'),
+        throwsArgumentError,
+      );
+    });
 
-      final profile = await store.createProfile('Home PC');
+    test('imports legacy file-based data once on first open', () async {
+      store.close();
+      final profile = BackupTargetProfile(
+        id: 'home-pc',
+        displayName: 'Home PC',
+        createdAtUtc: DateTime.utc(2026, 7, 12),
+        lastConfirmedAtUtc: null,
+      );
+      await File(
+        '${rootDirectory.path}${Platform.pathSeparator}profiles.json',
+      ).writeAsString(
+        jsonEncode({
+          'schemaVersion': 1,
+          'selectedProfileId': 'home-pc',
+          'profiles': [profile.toJson()],
+        }),
+      );
       const codec = BackupManifestCodec();
-      final pendingFile = File(
+      await File(
         '${rootDirectory.path}${Platform.pathSeparator}'
-        'pending-${profile.id}.json',
+        'pending-home-pc.json',
+      ).writeAsString(
+        codec.encode(_manifest('home-pc', [_media(key: 'external:1')])),
       );
-      await pendingFile.writeAsString(
-        codec.encode(_manifest('different-profile', [_media()])),
+      await File(
+        '${rootDirectory.path}${Platform.pathSeparator}'
+        'confirmed-home-pc.json',
+      ).writeAsString(
+        codec.encode(_manifest('home-pc', [
+          _media(key: 'external:2', name: 'done.jpg'),
+        ])),
       );
 
-      await expectLater(
-        store.loadPending(profile.id),
-        throwsA(isA<FormatException>()),
+      store = BackupProfileStore(rootDirectory: rootDirectory);
+      final index = await store.loadIndex();
+      expect(index.profiles.single.id, 'home-pc');
+      expect(index.selectedProfileId, 'home-pc');
+      expect(
+        (await store.loadPending('home-pc'))?.items.single.snapshotItem.mediaKey,
+        'external:1',
       );
+      expect(
+        (await store.loadConfirmedLedger('home-pc')).single.mediaKey,
+        'external:2',
+      );
+      expect(
+        await File(
+          '${rootDirectory.path}${Platform.pathSeparator}'
+          'profiles.json.imported',
+        ).exists(),
+        isTrue,
+      );
+
+      // Reopening must not duplicate the imported data.
+      store.close();
+      store = BackupProfileStore(rootDirectory: rootDirectory);
+      expect((await store.loadIndex()).profiles, hasLength(1));
     });
   });
 }

@@ -2,7 +2,9 @@
 ; Build the Flutter Release bundle before compiling this script with ISCC.exe.
 
 #define MyAppName "LocalShare"
-#define MyAppVersion "0.1.1.61"
+#ifndef MyAppVersion
+#define MyAppVersion "0.2.1.63"
+#endif
 #define MyAppPublisher "LocalShare"
 #define MyAppExeName "LocalShare.exe"
 #define ProjectRoot AddBackslash(SourcePath) + ".."
@@ -38,6 +40,10 @@ VersionInfoProductName={#MyAppName}
 VersionInfoProductVersion={#MyAppVersion}
 VersionInfoCompany={#MyAppPublisher}
 VersionInfoDescription={#MyAppName} Setup
+#ifdef SignInstaller
+SignTool=LocalShareSign
+SignedUninstaller=yes
+#endif
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"

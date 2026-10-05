@@ -16,10 +16,14 @@ class RhttpWrapper implements CustomHttpClient {
   Future<String> get({
     required String uri,
     required Map<String, String> query,
+    CustomCancelToken? cancelToken,
   }) async {
+    final token = cancelToken == null ? null : CancelToken();
+    if (token != null) cancelToken!.setCancel(token.cancel);
     final response = await _client.get(
       uri,
       query: query,
+      cancelToken: token,
     );
     return response.body;
   }
@@ -60,7 +64,7 @@ class RhttpWrapper implements CustomHttpClient {
         length: int.parse(headers['Content-Length']!),
       ),
       onSendProgress: (curr, total) {
-        onSendProgress(curr / total);
+        onSendProgress(total > 0 ? curr / total : 1);
       },
       cancelToken: token,
     );

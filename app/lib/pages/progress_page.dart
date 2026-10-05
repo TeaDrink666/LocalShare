@@ -47,8 +47,7 @@ class _ProgressPageState extends State<ProgressPage> with Refena {
   int _totalBytes = double.maxFinite.toInt();
   int _lastRemainingTimeUpdate = 0; // millis since epoch
   String? _remainingTime;
-  List<FileDto> _files =
-      []; // also contains declined files (files without token)
+  List<FileDto> _files = []; // also contains declined files (files without token)
   Set<String> _selectedFiles = {};
   SessionStatus? _lastStatus;
 
@@ -78,19 +77,19 @@ class _ProgressPageState extends State<ProgressPage> with Refena {
 
       if (ref.read(settingsProvider).autoFinish) {
         _finishTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-          final finished = ref
-                  .read(serverProvider)
-                  ?.session
-                  ?.files
-                  .values
-                  .map((e) => e.status)
-                  .isFinishedOrSkipped ??
-              ref
-                  .read(sendProvider)[widget.sessionId]
-                  ?.files
-                  .values
-                  .map((e) => e.status)
-                  .isFinishedOrSkipped ??
+          final receiveSession = ref.read(serverProvider)?.sessions[widget.sessionId];
+          final sendState = ref.read(sendProvider)[widget.sessionId];
+          final sessionStatus = receiveSession?.status ?? sendState?.status;
+          final hasErrors = sessionStatus == SessionStatus.finishedWithErrors ||
+              receiveSession?.files.values.any((f) => f.status == FileStatus.failed) == true ||
+              sendState?.files.values.any((f) => f.status == FileStatus.failed) == true;
+          // Keep the page open when something failed, so the error stays
+          // visible instead of being swept away by the auto-close timer.
+          if (hasErrors) {
+            return;
+          }
+          final finished = receiveSession?.files.values.map((e) => e.status).isFinishedOrSkipped ??
+              sendState?.files.values.map((e) => e.status).isFinishedOrSkipped ??
               true;
           if (finished) {
             if (_finishCounter == 1) {
@@ -106,44 +105,27 @@ class _ProgressPageState extends State<ProgressPage> with Refena {
       }
 
       setState(() {
-        final receiveSession = ref.read(serverProvider)?.session;
+        final receiveSession = ref.read(serverProvider)?.sessions[widget.sessionId];
         if (receiveSession != null) {
           _files = receiveSession.files.values.map((f) => f.file).toList();
 
           // We previously used f.token != null here, but this may not work on very fast networks.
-          _selectedFiles = receiveSession.files.values
-              .where((f) => f.status != FileStatus.skipped)
-              .map((f) => f.file.id)
-              .toSet();
+          _selectedFiles = receiveSession.files.values.where((f) => f.status != FileStatus.skipped).map((f) => f.file.id).toSet();
         } else {
           final sendSession = ref.read(sendProvider)[widget.sessionId];
           if (sendSession != null) {
             _files = sendSession.files.values.map((f) => f.file).toList();
-            _selectedFiles = sendSession.files.values
-                .where((f) => f.status != FileStatus.skipped)
-                .map((f) => f.file.id)
-                .toSet();
+            _selectedFiles = sendSession.files.values.where((f) => f.status != FileStatus.skipped).map((f) => f.file.id).toSet();
           }
         }
 
-        _totalBytes = _files
-            .where((f) => _selectedFiles.contains(f.id))
-            .fold(0, (prev, curr) => prev + curr.size);
+        _totalBytes = _files.where((f) => _selectedFiles.contains(f.id)).fold(0, (prev, curr) => prev + curr.size);
       });
     });
   }
 
   void _exit({required bool closeSession}) async {
-    final receiveSession = ref.read(serverProvider.select((s) => s?.session));
-    final sendSession = ref.read(sendProvider)[widget.sessionId];
-    final SessionStatus? status = receiveSession?.status ?? sendSession?.status;
-    final keepSession = !closeSession &&
-        (status == SessionStatus.sending ||
-            status == SessionStatus.finishedWithErrors);
-    final result =
-        status == null || keepSession || await _askCancelConfirmation(status);
-
-    if (result && mounted) {
+    if (mounted) {
       // ignore: unawaited_futures
       context.popUntilRoot();
     }
@@ -151,18 +133,16 @@ class _ProgressPageState extends State<ProgressPage> with Refena {
 
   Future<bool> _askCancelConfirmation(SessionStatus status) async {
     final bool result = switch (status == SessionStatus.sending) {
-      true =>
-        (await context.pushBottomSheet(() => const CancelSessionDialog())) ==
-            true,
+      true => (await context.pushBottomSheet(() => const CancelSessionDialog())) == true,
       false => true,
     };
     if (result) {
-      final receiveSession = ref.read(serverProvider)?.session;
+      final receiveSession = ref.read(serverProvider)?.sessions[widget.sessionId];
       final sendState = ref.read(sendProvider)[widget.sessionId];
 
       if (receiveSession != null) {
         if (receiveSession.status == SessionStatus.sending) {
-          ref.notifier(serverProvider).cancelSession();
+          ref.notifier(serverProvider).cancelTask(widget.sessionId);
         } else {
           ref.notifier(serverProvider).closeSession();
         }
@@ -192,15 +172,9 @@ class _ProgressPageState extends State<ProgressPage> with Refena {
   Widget build(BuildContext context) {
     final progressNotifier = ref.watch(progressProvider);
     final currBytes = _files.fold<int>(
-        0,
-        (prev, curr) =>
-            prev +
-            ((progressNotifier.getProgress(
-                        sessionId: widget.sessionId, fileId: curr.id) *
-                    curr.size)
-                .round()));
+        0, (prev, curr) => prev + ((progressNotifier.getProgress(sessionId: widget.sessionId, fileId: curr.id) * curr.size).round()));
 
-    final receiveSession = ref.watch(serverProvider.select((s) => s?.session));
+    final receiveSession = ref.watch(serverProvider.select((s) => s?.sessions[widget.sessionId]));
     final sendSession = ref.watch(sendProvider)[widget.sessionId];
 
     final SessionStatus? status = receiveSession?.status ?? sendSession?.status;
@@ -215,45 +189,32 @@ class _ProgressPageState extends State<ProgressPage> with Refena {
     }
 
     if (status == null) {
-      return Scaffold(
-        body: Container(),
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
       );
     }
 
-    final title = receiveSession != null
-        ? t.progressPage.titleReceiving
-        : t.progressPage.titleSending;
+    final title = receiveSession != null ? t.progressPage.titleReceiving : t.progressPage.titleSending;
     final startTime = receiveSession?.startTime ?? sendSession?.startTime;
     final endTime = receiveSession?.endTime ?? sendSession?.endTime;
     final int? speedInBytes;
     if (startTime != null && currBytes >= 500 * 1024) {
-      speedInBytes = getFileSpeed(
-          start: startTime,
-          end: endTime ?? DateTime.now().millisecondsSinceEpoch,
-          bytes: currBytes);
+      speedInBytes = getFileSpeed(start: startTime, end: endTime ?? DateTime.now().millisecondsSinceEpoch, bytes: currBytes);
 
       final now = DateTime.now().millisecondsSinceEpoch;
       if (now - _lastRemainingTimeUpdate >= 1000) {
-        _remainingTime = getRemainingTime(
-            bytesPerSeconds: speedInBytes,
-            remainingBytes: _totalBytes - currBytes);
+        _remainingTime = getRemainingTime(bytesPerSeconds: speedInBytes, remainingBytes: _totalBytes - currBytes);
         _lastRemainingTimeUpdate = now;
       }
     } else {
       speedInBytes = null;
     }
 
-    final fileStatusMap =
-        receiveSession?.files.map((k, f) => MapEntry(k, f.status)) ??
-            sendSession!.files.map((k, f) => MapEntry(k, f.status));
-    final finishedCount =
-        fileStatusMap.values.where((s) => s == FileStatus.finished).length;
+    final fileStatusMap = receiveSession?.files.map((k, f) => MapEntry(k, f.status)) ?? sendSession!.files.map((k, f) => MapEntry(k, f.status));
+    final finishedCount = fileStatusMap.values.where((s) => s == FileStatus.finished).length;
 
-    final knownTotalBytes =
-        _totalBytes == double.maxFinite.toInt() ? null : _totalBytes;
-    final totalProgress = knownTotalBytes == null || knownTotalBytes == 0
-        ? 0.0
-        : (currBytes / knownTotalBytes).clamp(0.0, 1.0);
+    final knownTotalBytes = _totalBytes == double.maxFinite.toInt() ? null : _totalBytes;
+    final totalProgress = knownTotalBytes == null || knownTotalBytes == 0 ? 0.0 : (currBytes / knownTotalBytes).clamp(0.0, 1.0);
 
     return PopScope(
       onPopInvokedWithResult: (didPop, result) {
@@ -288,16 +249,12 @@ class _ProgressPageState extends State<ProgressPage> with Refena {
                 title: title,
                 showTitle: !widget.showAppBar,
                 receiving: receiveSession != null,
-                destinationDirectory:
-                    checkPlatformWithFileSystem() && receiveSession != null
-                        ? receiveSession.destinationDirectory
-                        : null,
+                destinationDirectory: checkPlatformWithFileSystem() && receiveSession != null ? receiveSession.destinationDirectory : null,
                 canOpenDestination: !checkPlatform([TargetPlatform.iOS]),
                 onOpenDestination: receiveSession == null
                     ? null
                     : () async {
-                        await openFolder(
-                            folderPath: receiveSession.destinationDirectory);
+                        await openFolder(folderPath: receiveSession.destinationDirectory);
                       },
               );
             } else if (index == 1) {
@@ -315,13 +272,17 @@ class _ProgressPageState extends State<ProgressPage> with Refena {
                 onToggleAdvanced: () {
                   setState(() => _advanced = !_advanced);
                 },
-                onExit: () => _exit(closeSession: true),
+                onExit: () async {
+                  if (status == SessionStatus.sending) {
+                    if (await _askCancelConfirmation(status) && mounted) _exit(closeSession: false);
+                  } else {
+                    _exit(closeSession: false);
+                  }
+                },
               );
             } else if (index == 2) {
               final errorMessage = sendSession?.errorMessage;
-              item = errorMessage == null
-                  ? const SizedBox.shrink()
-                  : _SessionErrorCard(errorMessage: errorMessage);
+              item = errorMessage == null ? const SizedBox.shrink() : _SessionErrorCard(errorMessage: errorMessage);
             } else if (index == 3) {
               item = _FileSectionHeader(
                 fileCount: _files.length,
@@ -331,16 +292,12 @@ class _ProgressPageState extends State<ProgressPage> with Refena {
               item = const SizedBox(height: 12);
             } else {
               final file = _files[index - 4];
-              final String fileName =
-                  receiveSession?.files[file.id]?.desiredName ?? file.fileName;
+              final String fileName = receiveSession?.files[file.id]?.desiredName ?? file.fileName;
               final fileStatus = fileStatusMap[file.id]!;
-              final savedToGallery =
-                  receiveSession?.files[file.id]?.savedToGallery ?? false;
+              final savedToGallery = receiveSession?.files[file.id]?.savedToGallery ?? false;
 
               final String? filePath;
-              if (receiveSession != null &&
-                  fileStatus == FileStatus.finished &&
-                  !savedToGallery) {
+              if (receiveSession != null && fileStatus == FileStatus.finished && !savedToGallery) {
                 filePath = receiveSession.files[file.id]!.path;
               } else if (sendSession != null) {
                 filePath = sendSession.files[file.id]!.path;
@@ -372,16 +329,13 @@ class _ProgressPageState extends State<ProgressPage> with Refena {
                 fileSize: file.size.asReadableFileSize,
                 fileStatus: fileStatus,
                 savedToGallery: savedToGallery,
-                progress: progressNotifier.getProgress(
-                    sessionId: widget.sessionId, fileId: file.id),
+                progress: progressNotifier.getProgress(sessionId: widget.sessionId, fileId: file.id),
                 thumbnail: thumbnail,
                 asset: asset,
                 filePath: filePath,
                 fileType: file.fileType,
                 errorMessage: errorMessage,
-                onOpen: filePath != null && receiveSession != null
-                    ? () async => openFile(context, file.fileType, filePath!)
-                    : null,
+                onOpen: filePath != null && receiveSession != null ? () async => openFile(context, file.fileType, filePath!) : null,
                 onShowError: errorMessage == null
                     ? null
                     : () async {
@@ -407,8 +361,7 @@ class _ProgressPageState extends State<ProgressPage> with Refena {
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 1040),
                 child: Padding(
-                  padding: EdgeInsets.only(
-                      bottom: index == _files.length + 4 ? 0 : 12),
+                  padding: EdgeInsets.only(bottom: index == _files.length + 4 ? 0 : 12),
                   child: item,
                 ),
               ),
@@ -458,17 +411,14 @@ class _ProgressPageIntro extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Text(
-            receiving
-                ? _ProgressCopy.receivingSubtitle
-                : _ProgressCopy.sendingSubtitle,
+            receiving ? _ProgressCopy.receivingSubtitle : _ProgressCopy.sendingSubtitle,
             style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                   color: scheme.onSurfaceVariant,
                   height: 1.4,
                 ),
           ),
         ],
-        if (showTitle && destinationDirectory != null)
-          const SizedBox(height: 16),
+        if (showTitle && destinationDirectory != null) const SizedBox(height: 16),
         if (destinationDirectory != null)
           Material(
             color: scheme.surfaceContainerLow,
@@ -490,8 +440,7 @@ class _ProgressPageIntro extends StatelessWidget {
                         color: scheme.primaryContainer,
                         borderRadius: BorderRadius.circular(13),
                       ),
-                      child: Icon(Icons.folder_rounded,
-                          color: scheme.onPrimaryContainer),
+                      child: Icon(Icons.folder_rounded, color: scheme.onPrimaryContainer),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
@@ -500,20 +449,14 @@ class _ProgressPageIntro extends StatelessWidget {
                         children: [
                           Text(
                             t.settingsTab.receive.destination,
-                            style: Theme.of(context)
-                                .textTheme
-                                .labelMedium
-                                ?.copyWith(color: scheme.onSurfaceVariant),
+                            style: Theme.of(context).textTheme.labelMedium?.copyWith(color: scheme.onSurfaceVariant),
                           ),
                           const SizedBox(height: 3),
                           Text(
                             destinationDirectory!,
                             maxLines: 3,
                             overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context)
-                                .textTheme
-                                .bodyMedium
-                                ?.copyWith(fontWeight: FontWeight.w700),
+                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
                           ),
                         ],
                       ),
@@ -522,8 +465,7 @@ class _ProgressPageIntro extends StatelessWidget {
                       const SizedBox(width: 8),
                       Tooltip(
                         message: _ProgressCopy.openFolder,
-                        child: Icon(Icons.open_in_new_rounded,
-                            size: 20, color: scheme.primary),
+                        child: Icon(Icons.open_in_new_rounded, size: 20, color: scheme.primary),
                       ),
                     ],
                   ],
@@ -579,8 +521,7 @@ class _ProgressHeroCard extends StatelessWidget {
           begin: AlignmentDirectional.topStart,
           end: AlignmentDirectional.bottomEnd,
           colors: [
-            Color.alphaBlend(
-                accent.withOpacity(0.13), scheme.surfaceContainerLow),
+            Color.alphaBlend(accent.withOpacity(0.13), scheme.surfaceContainerLow),
             scheme.surfaceContainerLow,
           ],
         ),
@@ -607,8 +548,7 @@ class _ProgressHeroCard extends StatelessWidget {
                   color: accent.withOpacity(0.14),
                   borderRadius: BorderRadius.circular(17),
                 ),
-                child:
-                    Icon(_sessionStatusIcon(status), color: accent, size: 27),
+                child: Icon(_sessionStatusIcon(status), color: accent, size: 27),
               ),
               const SizedBox(width: 14),
               Expanded(
@@ -624,9 +564,7 @@ class _ProgressHeroCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      statusLabel.isEmpty
-                          ? _ProgressCopy.processing
-                          : statusLabel,
+                      statusLabel.isEmpty ? _ProgressCopy.processing : statusLabel,
                       style: Theme.of(context).textTheme.titleLarge?.copyWith(
                             fontWeight: FontWeight.w800,
                             letterSpacing: -0.2,
@@ -668,8 +606,7 @@ class _ProgressHeroCard extends StatelessWidget {
             selectedCount: selectedCount,
           ),
           AnimatedCrossFade(
-            crossFadeState:
-                advanced ? CrossFadeState.showSecond : CrossFadeState.showFirst,
+            crossFadeState: advanced ? CrossFadeState.showSecond : CrossFadeState.showFirst,
             duration: const Duration(milliseconds: 200),
             alignment: Alignment.topLeft,
             firstChild: const SizedBox.shrink(),
@@ -686,8 +623,7 @@ class _ProgressHeroCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      t.progressPage.total
-                          .count(curr: finishedCount, n: selectedCount),
+                      t.progressPage.total.count(curr: finishedCount, n: selectedCount),
                       style: Theme.of(context).textTheme.bodyMedium,
                     ),
                     const SizedBox(height: 5),
@@ -701,8 +637,7 @@ class _ProgressHeroCard extends StatelessWidget {
                     if (speedInBytes != null) ...[
                       const SizedBox(height: 5),
                       Text(
-                        t.progressPage.total
-                            .speed(speed: speedInBytes!.asReadableFileSize),
+                        t.progressPage.total.speed(speed: speedInBytes!.asReadableFileSize),
                         style: Theme.of(context).textTheme.bodyMedium,
                       ),
                     ],
@@ -768,16 +703,13 @@ class _ProgressMetrics extends StatelessWidget {
               width: width,
               icon: Icons.data_usage_rounded,
               label: _ProgressCopy.transferred,
-              value:
-                  '${currentBytes.asReadableFileSize} / ${totalBytes?.asReadableFileSize ?? '-'}',
+              value: '${currentBytes.asReadableFileSize} / ${totalBytes?.asReadableFileSize ?? '-'}',
             ),
             _ProgressMetric(
               width: width,
               icon: Icons.speed_rounded,
               label: _ProgressCopy.speed,
-              value: speedInBytes == null
-                  ? '-'
-                  : '${speedInBytes!.asReadableFileSize}/s',
+              value: speedInBytes == null ? '-' : '${speedInBytes!.asReadableFileSize}/s',
             ),
             _ProgressMetric(
               width: width,
@@ -828,18 +760,12 @@ class _ProgressMetric extends StatelessWidget {
               children: [
                 Text(
                   label,
-                  style: Theme.of(context)
-                      .textTheme
-                      .labelSmall
-                      ?.copyWith(color: scheme.onSurfaceVariant),
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(color: scheme.onSurfaceVariant),
                 ),
                 const SizedBox(height: 3),
                 Text(
                   value,
-                  style: Theme.of(context)
-                      .textTheme
-                      .labelLarge
-                      ?.copyWith(fontWeight: FontWeight.w800),
+                  style: Theme.of(context).textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w800),
                 ),
               ],
             ),
@@ -939,10 +865,7 @@ class _SessionErrorCard extends StatelessWidget {
           Expanded(
             child: SelectableText(
               errorMessage,
-              style: Theme.of(context)
-                  .textTheme
-                  .bodyMedium
-                  ?.copyWith(color: scheme.onErrorContainer, height: 1.4),
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: scheme.onErrorContainer, height: 1.4),
             ),
           ),
         ],
@@ -955,8 +878,7 @@ class _FileSectionHeader extends StatelessWidget {
   final int fileCount;
   final int finishedCount;
 
-  const _FileSectionHeader(
-      {required this.fileCount, required this.finishedCount});
+  const _FileSectionHeader({required this.fileCount, required this.finishedCount});
 
   @override
   Widget build(BuildContext context) {
@@ -970,10 +892,7 @@ class _FileSectionHeader extends StatelessWidget {
           Expanded(
             child: Text(
               _ProgressCopy.fileDetails,
-              style: Theme.of(context)
-                  .textTheme
-                  .titleLarge
-                  ?.copyWith(fontWeight: FontWeight.w800),
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
             ),
           ),
           const SizedBox(width: 12),
@@ -1037,9 +956,7 @@ class _ProgressFileCard extends StatelessWidget {
       color: scheme.surfaceContainerLow,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(20),
-        side: BorderSide(
-            color: statusColor
-                .withOpacity(fileStatus == FileStatus.sending ? 0.42 : 0.18)),
+        side: BorderSide(color: statusColor.withOpacity(fileStatus == FileStatus.sending ? 0.42 : 0.18)),
       ),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
@@ -1064,18 +981,12 @@ class _ProgressFileCard extends StatelessWidget {
                       fileName,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context)
-                          .textTheme
-                          .titleSmall
-                          ?.copyWith(fontWeight: FontWeight.w700),
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
                     ),
                     const SizedBox(height: 3),
                     Text(
                       fileSize,
-                      style: Theme.of(context)
-                          .textTheme
-                          .bodySmall
-                          ?.copyWith(color: scheme.onSurfaceVariant),
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
                     ),
                     const SizedBox(height: 9),
                     if (fileStatus == FileStatus.sending)
@@ -1090,10 +1001,7 @@ class _ProgressFileCard extends StatelessWidget {
                           const SizedBox(width: 9),
                           Text(
                             '${(progress.clamp(0.0, 1.0) * 100).round()}%',
-                            style: Theme.of(context)
-                                .textTheme
-                                .labelMedium
-                                ?.copyWith(
+                            style: Theme.of(context).textTheme.labelMedium?.copyWith(
                                   color: statusColor,
                                   fontWeight: FontWeight.w800,
                                 ),
@@ -1103,18 +1011,12 @@ class _ProgressFileCard extends StatelessWidget {
                     else
                       Row(
                         children: [
-                          Icon(_fileStatusIcon(fileStatus),
-                              size: 18, color: statusColor),
+                          Icon(_fileStatusIcon(fileStatus), size: 18, color: statusColor),
                           const SizedBox(width: 7),
                           Flexible(
                             child: Text(
-                              savedToGallery
-                                  ? t.progressPage.savedToGallery
-                                  : fileStatus.label,
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .bodyMedium
-                                  ?.copyWith(
+                              savedToGallery ? t.progressPage.savedToGallery : fileStatus.label,
+                              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                                     color: statusColor,
                                     fontWeight: FontWeight.w700,
                                   ),
@@ -1127,8 +1029,7 @@ class _ProgressFileCard extends StatelessWidget {
                               child: IconButton(
                                 visualDensity: VisualDensity.compact,
                                 onPressed: onShowError,
-                                icon: Icon(Icons.info_outline_rounded,
-                                    color: scheme.warning, size: 20),
+                                icon: Icon(Icons.info_outline_rounded, color: scheme.warning, size: 20),
                               ),
                             ),
                           ],
@@ -1161,9 +1062,7 @@ Color _sessionStatusColor(BuildContext context, SessionStatus status) {
     SessionStatus.sending => scheme.primary,
     SessionStatus.finished => scheme.tertiary,
     SessionStatus.finishedWithErrors => scheme.error,
-    SessionStatus.canceledBySender ||
-    SessionStatus.canceledByReceiver =>
-      scheme.onSurfaceVariant,
+    SessionStatus.canceledBySender || SessionStatus.canceledByReceiver => scheme.onSurfaceVariant,
     _ => scheme.secondary,
   };
 }
@@ -1173,9 +1072,7 @@ IconData _sessionStatusIcon(SessionStatus status) {
     SessionStatus.sending => Icons.swap_vert_circle_outlined,
     SessionStatus.finished => Icons.check_circle_outline_rounded,
     SessionStatus.finishedWithErrors => Icons.error_outline_rounded,
-    SessionStatus.canceledBySender ||
-    SessionStatus.canceledByReceiver =>
-      Icons.cancel_outlined,
+    SessionStatus.canceledBySender || SessionStatus.canceledByReceiver => Icons.cancel_outlined,
     _ => Icons.hourglass_top_rounded,
   };
 }
@@ -1196,14 +1093,9 @@ abstract final class _ProgressCopy {
         _ => false,
       };
 
-  static String get receivingSubtitle => _isChinese
-      ? '文件正在通过局域网传入当前设备。'
-      : 'Files are arriving on this device over your local network.';
-  static String get sendingSubtitle => _isChinese
-      ? '文件正在通过局域网发送到对方设备。'
-      : 'Files are being sent to the other device over your local network.';
-  static String get openFolder =>
-      _isChinese ? '打开保存位置' : 'Open destination folder';
+  static String get receivingSubtitle => _isChinese ? '文件正在通过局域网传入当前设备。' : 'Files are arriving on this device over your local network.';
+  static String get sendingSubtitle => _isChinese ? '文件正在通过局域网发送到对方设备。' : 'Files are being sent to the other device over your local network.';
+  static String get openFolder => _isChinese ? '打开保存位置' : 'Open destination folder';
   static String get overallProgress => _isChinese ? '总进度' : 'Overall progress';
   static String get processing => _isChinese ? '正在处理' : 'Processing';
   static String get files => _isChinese ? '文件' : 'Files';
@@ -1236,7 +1128,7 @@ extension on FileStatus {
       case FileStatus.queue:
         return Theme.of(context).colorScheme.primary;
       case FileStatus.skipped:
-        return Colors.grey;
+        return Theme.of(context).colorScheme.onSurfaceVariant;
       case FileStatus.sending:
         return Theme.of(context).colorScheme.primary;
       case FileStatus.failed:

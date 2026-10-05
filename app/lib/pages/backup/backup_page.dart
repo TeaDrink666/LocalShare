@@ -9,6 +9,7 @@ import 'package:localsend_app/features/backup/data/backup_profile_store.dart';
 import 'package:localsend_app/features/backup/data/backup_target_profile.dart';
 import 'package:localsend_app/features/backup/domain/backup_plan.dart';
 import 'package:localsend_app/features/backup/domain/incremental_backup_planner.dart';
+import 'package:localsend_app/features/backup/domain/media_snapshot.dart';
 import 'package:localsend_app/features/backup/manifest/manifest.dart';
 import 'package:localsend_app/features/backup/presentation/backup_profile_epoch_guard.dart';
 import 'package:localsend_app/features/backup/presentation/backup_saving_pop_scope.dart';
@@ -19,10 +20,13 @@ import 'package:localsend_app/provider/device_info_provider.dart';
 import 'package:localsend_app/provider/network/nearby_devices_provider.dart';
 import 'package:localsend_app/provider/network/scan_facade.dart';
 import 'package:localsend_app/provider/network/send_provider.dart';
+import 'package:localsend_app/provider/settings_provider.dart';
 import 'package:localsend_app/util/device_type_ext.dart';
 import 'package:localsend_app/util/file_size_helper.dart';
+import 'package:localsend_app/util/native/directories.dart';
 import 'package:localsend_app/util/native/platform_check.dart';
-import 'package:localsend_app/widget/localshare_design/localshare_page_background.dart';
+import 'package:localsend_app/widget/dialogs/address_input_dialog.dart';
+import 'package:localsend_app/widget/localshare_design/localshare_design.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:refena_flutter/refena_flutter.dart';
 import 'package:routerino/routerino.dart';
@@ -36,8 +40,7 @@ typedef BackupMediaScanner = Future<AndroidMediaCatalogScan> Function({
   required bool includeVideos,
   required BackupScanProgress onProgress,
 });
-typedef BackupPermissionRequester = Future<BackupMediaPermissionResult>
-    Function({
+typedef BackupPermissionRequester = Future<BackupMediaPermissionResult> Function({
   required bool includeImages,
   required bool includeVideos,
 });
@@ -88,8 +91,7 @@ class BackupPage extends StatefulWidget {
   State<BackupPage> createState() => _BackupPageState();
 }
 
-class _BackupPageState extends State<BackupPage>
-    with Refena, AutomaticKeepAliveClientMixin {
+class _BackupPageState extends State<BackupPage> with Refena, AutomaticKeepAliveClientMixin {
   BackupProfileStore? _store;
   BackupProfileIndex? _profileIndex;
   BackupManifest? _pendingManifest;
@@ -100,6 +102,7 @@ class _BackupPageState extends State<BackupPage>
   bool _initializing = true;
   bool _scanning = false;
   bool _saving = false;
+  bool _nativeTaskRunning = false;
   bool _includeImages = true;
   bool _includeVideos = true;
   bool _limitedAccess = false;
@@ -112,10 +115,18 @@ class _BackupPageState extends State<BackupPage>
   final _profileEpoch = BackupProfileEpochGuard();
 
   BackupTargetProfile? get _selectedProfile => _profileIndex?.selectedProfile;
-  bool get _isAndroid =>
-      widget.isAndroidOverride ?? checkPlatform([TargetPlatform.android]);
-  bool get _storageReady =>
-      !_initializing && _store != null && _profileIndex != null;
+  bool get _isAndroid => widget.isAndroidOverride ?? checkPlatform([TargetPlatform.android]);
+  bool get _storageReady => !_initializing && _store != null && _profileIndex != null;
+
+  String get _savingStatusText {
+    if (_scanning) {
+      return LocalShareCopy.scanningItems(_scannedItemCount);
+    }
+    if (_allowManualConfirmation || _pendingManifest != null) {
+      return LocalShareCopy.verifyingBackupReceipt;
+    }
+    return LocalShareCopy.preparingBackup;
+  }
 
   @override
   bool get wantKeepAlive => widget.embedded;
@@ -162,9 +173,7 @@ class _BackupPageState extends State<BackupPage>
       final store = await widget.openStore();
       await store.ensureDefaultProfile(LocalShareCopy.defaultBackupTarget);
       final index = await store.loadIndex();
-      final pending = index.selectedProfile == null
-          ? null
-          : await store.loadPending(index.selectedProfile!.id);
+      final pending = index.selectedProfile == null ? null : await store.loadPending(index.selectedProfile!.id);
       if (!mounted) {
         return;
       }
@@ -315,11 +324,7 @@ class _BackupPageState extends State<BackupPage>
   Future<void> _scan() async {
     final profile = _selectedProfile;
     final store = _store;
-    if (!_storageReady ||
-        profile == null ||
-        store == null ||
-        _scanning ||
-        _saving) {
+    if (!_storageReady || profile == null || store == null || _scanning || _saving) {
       return;
     }
     if (!_includeImages && !_includeVideos) {
@@ -388,10 +393,16 @@ class _BackupPageState extends State<BackupPage>
         _plannedFiles = files;
         _limitedAccess = permissionResult.limited;
       });
-      final nearbyDevices = (widget.nearbyDevicesOverride?.devices ??
-              ref.read(nearbyDevicesProvider).devices)
-          .values
-          .where(_isBackupTargetDevice);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            plan.isEmpty ? LocalShareCopy.everythingBackedUp : LocalShareCopy.scanCompleted(plan.currentItemCount),
+          ),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+      final nearbyDevices = (widget.nearbyDevicesOverride?.devices ?? ref.read(nearbyDevicesProvider).devices).values.where(_isBackupTargetDevice);
       if (files.isNotEmpty && nearbyDevices.isEmpty) {
         unawaited(_scanNearbyDevices());
       }
@@ -406,9 +417,7 @@ class _BackupPageState extends State<BackupPage>
     } catch (error) {
       if (mounted) {
         setState(() {
-          _error = error is _BackupUiException
-              ? error.message
-              : '${LocalShareCopy.scanFailed}: $error';
+          _error = error is _BackupUiException ? error.message : '${LocalShareCopy.scanFailed}: $error';
         });
       }
     } finally {
@@ -442,8 +451,7 @@ class _BackupPageState extends State<BackupPage>
       return null;
     }
 
-    final sourceDevice = widget.sourceDeviceFingerprint?.call() ??
-        ref.read(deviceFullInfoProvider).fingerprint;
+    final sourceDevice = widget.sourceDeviceFingerprint?.call() ?? ref.read(deviceFullInfoProvider).fingerprint;
     final manifest = BackupManifest.fromMediaItems(
       batchId: _uuid.v4(),
       profileId: profile.id,
@@ -485,12 +493,7 @@ class _BackupPageState extends State<BackupPage>
   Future<void> _sendViaWeb() async {
     final plan = _plan;
     final profile = _selectedProfile;
-    if (!_storageReady ||
-        profile == null ||
-        plan == null ||
-        _plannedFiles.isEmpty ||
-        _saving ||
-        _scanning) {
+    if (!_storageReady || profile == null || plan == null || _plannedFiles.isEmpty || _saving || _scanning) {
       return;
     }
     final files = List<CrossFile>.unmodifiable(_plannedFiles);
@@ -561,13 +564,7 @@ class _BackupPageState extends State<BackupPage>
     final plan = _plan;
     final selectedProfile = _selectedProfile;
     final store = _store;
-    if (!_storageReady ||
-        selectedProfile == null ||
-        store == null ||
-        plan == null ||
-        _plannedFiles.isEmpty ||
-        _saving ||
-        _scanning) {
+    if (!_storageReady || selectedProfile == null || store == null || plan == null || _plannedFiles.isEmpty || _saving || _scanning) {
       return;
     }
 
@@ -598,6 +595,7 @@ class _BackupPageState extends State<BackupPage>
           )) {
         return;
       }
+      setState(() => _nativeTaskRunning = true);
       final result = await (widget.sendNativeBackup?.call(
             device,
             files,
@@ -607,7 +605,14 @@ class _BackupPageState extends State<BackupPage>
                 target: device,
                 files: files,
                 manifest: manifest,
+                onCommitted: (keys) async {
+                  await store.confirmPending(profile.id, mediaKeys: keys);
+                },
               ));
+      // A test/custom sender follows the same durable completion contract.
+      final confirmedCount = widget.sendNativeBackup != null
+          ? await store.confirmPending(profile.id, mediaKeys: result.committedMediaKeys)
+          : result.committedMediaKeys.length;
       if (!mounted ||
           !_profileEpoch.matches(
             epoch: profileEpoch,
@@ -616,10 +621,6 @@ class _BackupPageState extends State<BackupPage>
           )) {
         return;
       }
-      final confirmedCount = await store.confirmPending(
-        profile.id,
-        mediaKeys: result.committedMediaKeys,
-      );
       await _reloadProfilesAndPending();
       await _recalculatePlan();
       if (mounted && _profileEpoch.owns(profileEpoch)) {
@@ -636,14 +637,15 @@ class _BackupPageState extends State<BackupPage>
     } catch (error) {
       if (mounted && _profileEpoch.owns(profileEpoch)) {
         setState(() {
-          _error = error is BackupProtocolUnavailableException
-              ? LocalShareCopy.backupProtocolUnavailable
-              : error.toString();
+          _error = error is BackupProtocolUnavailableException ? LocalShareCopy.backupProtocolUnavailable : error.toString();
         });
       }
     } finally {
       if (mounted && _profileEpoch.owns(profileEpoch)) {
-        setState(() => _saving = false);
+        setState(() {
+          _saving = false;
+          _nativeTaskRunning = false;
+        });
       }
     }
   }
@@ -704,70 +706,17 @@ class _BackupPageState extends State<BackupPage>
     final pending = _pendingManifest;
     final profile = _selectedProfile;
     final store = _store;
-    if (pending == null ||
-        profile == null ||
-        store == null ||
-        !_allowManualConfirmation ||
-        _saving ||
-        _scanning) {
+    if (pending == null || profile == null || store == null || !_allowManualConfirmation || _saving || _scanning) {
       return;
     }
-    final confirmed = await showDialog<bool>(
+    final selectedKeys = await showDialog<Set<String>>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        icon: const Icon(Icons.verified_rounded),
-        title: Text(LocalShareCopy.confirmSavedTitle),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(LocalShareCopy.confirmSavedMessage),
-            const SizedBox(height: 14),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color:
-                    Theme.of(dialogContext).colorScheme.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: Column(
-                children: [
-                  _ConfirmationDetailRow(
-                    key: const Key('backup-confirm-target'),
-                    label: LocalShareCopy.confirmationTargetComputer,
-                    value: profile.displayName,
-                  ),
-                  const SizedBox(height: 9),
-                  _ConfirmationDetailRow(
-                    key: const Key('backup-confirm-count'),
-                    label: LocalShareCopy.confirmationItemCount,
-                    value: LocalShareCopy.itemCount(pending.itemCount),
-                  ),
-                  const SizedBox(height: 9),
-                  _ConfirmationDetailRow(
-                    key: const Key('backup-confirm-size'),
-                    label: LocalShareCopy.confirmationTotalSize,
-                    value: pending.totalBytes.asReadableFileSize,
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: Text(LocalShareCopy.cancel),
-          ),
-          FilledButton.icon(
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            icon: const Icon(Icons.check_rounded),
-            label: Text(LocalShareCopy.confirm),
-          ),
-        ],
+      builder: (dialogContext) => _ConfirmPendingDialog(
+        manifest: pending,
+        profile: profile,
       ),
     );
-    if (confirmed != true || !mounted) {
+    if (selectedKeys == null || selectedKeys.isEmpty || !mounted) {
       return;
     }
 
@@ -776,7 +725,10 @@ class _BackupPageState extends State<BackupPage>
       _error = null;
     });
     try {
-      final count = await store.confirmPending(profile.id);
+      final count = await store.confirmPending(
+        profile.id,
+        mediaKeys: selectedKeys,
+      );
       await _reloadProfilesAndPending();
       await _recalculatePlan();
       if (mounted) {
@@ -798,6 +750,31 @@ class _BackupPageState extends State<BackupPage>
   Future<void> _discardPending() async {
     final profile = _selectedProfile;
     if (profile == null || _store == null || _saving || _scanning) {
+      return;
+    }
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        icon: Icon(Icons.delete_sweep_outlined, color: Theme.of(dialogContext).colorScheme.error, size: 32),
+        title: Text(LocalShareCopy.discardPending),
+        content: Text(LocalShareCopy.discardPendingMessage),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: Text(LocalShareCopy.cancel),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(dialogContext).colorScheme.error,
+              foregroundColor: Theme.of(dialogContext).colorScheme.onError,
+            ),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text(LocalShareCopy.discardPending),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) {
       return;
     }
     setState(() => _saving = true);
@@ -847,9 +824,7 @@ class _BackupPageState extends State<BackupPage>
       return;
     }
     final index = await store.loadIndex();
-    final pending = index.selectedProfile == null
-        ? null
-        : await store.loadPending(index.selectedProfile!.id);
+    final pending = index.selectedProfile == null ? null : await store.loadPending(index.selectedProfile!.id);
     if (mounted) {
       setState(() {
         _profileIndex = index;
@@ -948,16 +923,13 @@ class _BackupPageState extends State<BackupPage>
       ),
     );
     final page = Scaffold(
-      appBar: widget.embedded
-          ? null
-          : AppBar(title: Text(LocalShareCopy.backupPageTitle)),
-      body:
-          widget.embedded ? content : LocalSharePageBackground(child: content),
+      appBar: widget.embedded ? null : AppBar(title: Text(LocalShareCopy.backupPageTitle)),
+      body: widget.embedded ? content : LocalSharePageBackground(child: content),
     );
     if (widget.embedded) {
       return page;
     }
-    return BackupSavingPopScope(saving: _saving, child: page);
+    return BackupSavingPopScope(saving: _saving && !_nativeTaskRunning, child: page);
   }
 
   Widget _buildAndroidBody() {
@@ -989,6 +961,14 @@ class _BackupPageState extends State<BackupPage>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        if (_saving) ...[
+          _InlineNotice(
+            icon: Icons.hourglass_top_rounded,
+            text: _backupResultMessage ?? _savingStatusText,
+            busy: true,
+          ),
+          const SizedBox(height: 10),
+        ],
         _BackupSetupCard(
           key: const Key('backup-setup-card'),
           profiles: _profileIndex?.profiles ?? const [],
@@ -1018,7 +998,7 @@ class _BackupPageState extends State<BackupPage>
         if (_limitedAccess) ...[
           const SizedBox(height: 10),
           _InlineNotice(
-            icon: Icons.photo_library_outlined,
+            icon: Icons.photo_library_rounded,
             text: LocalShareCopy.limitedMediaAccess,
           ),
         ],
@@ -1060,8 +1040,7 @@ class _BackupPageState extends State<BackupPage>
                 : _BackupPlanCard(
                     key: const ValueKey('plan'),
                     plan: _plan!,
-                    nearbyState: widget.nearbyDevicesOverride ??
-                        context.watch(nearbyDevicesProvider),
+                    nearbyState: widget.nearbyDevicesOverride ?? context.watch(nearbyDevicesProvider),
                     busy: !_storageReady || _saving || _scanning,
                     onDevice: _sendToDevice,
                     onRefreshDevices: _scanNearbyDevices,
@@ -1075,6 +1054,9 @@ class _BackupPageState extends State<BackupPage>
 
   Widget _buildDesktopBody() {
     final scheme = Theme.of(context).colorScheme;
+    final backupDestination = ref.watch(
+      settingsProvider.select((settings) => settings.backupDestination),
+    );
     final action = FilledButton.tonalIcon(
       onPressed: () async {
         await widget.onOpenReceive();
@@ -1092,36 +1074,40 @@ class _BackupPageState extends State<BackupPage>
         Expanded(
           child: Text(
             LocalShareCopy.startOnAndroid,
-            style: Theme.of(context)
-                .textTheme
-                .bodyLarge
-                ?.copyWith(color: scheme.onSurfaceVariant),
+            style: Theme.of(context).textTheme.bodyLarge?.copyWith(color: scheme.onSurfaceVariant),
           ),
         ),
       ],
     );
-    return _SurfaceCard(
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          if (constraints.maxWidth < 500) {
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                message,
-                const SizedBox(height: 14),
-                action,
-              ],
-            );
-          }
-          return Row(
-            children: [
-              Expanded(child: message),
-              const SizedBox(width: 16),
-              action,
-            ],
-          );
-        },
-      ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _SurfaceCard(
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              if (constraints.maxWidth < 500) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    message,
+                    const SizedBox(height: 14),
+                    action,
+                  ],
+                );
+              }
+              return Row(
+                children: [
+                  Expanded(child: message),
+                  const SizedBox(width: 16),
+                  action,
+                ],
+              );
+            },
+          ),
+        ),
+        const SizedBox(height: 12),
+        _BackupDestinationCard(destination: backupDestination),
+      ],
     );
   }
 }
@@ -1140,10 +1126,10 @@ class _BackupHero extends StatelessWidget {
           height: 44,
           decoration: BoxDecoration(
             color: scheme.primaryContainer,
-            borderRadius: BorderRadius.circular(13),
+            borderRadius: BorderRadius.circular(LocalShareRadii.medium),
           ),
           child: Icon(
-            Icons.photo_library_outlined,
+            Icons.photo_library_rounded,
             color: scheme.onPrimaryContainer,
             size: 23,
           ),
@@ -1233,7 +1219,7 @@ class _BackupSetupCard extends StatelessWidget {
               Tooltip(
                 message: LocalShareCopy.backupTarget,
                 child: Icon(
-                  Icons.computer_outlined,
+                  Icons.computer_rounded,
                   color: scheme.primary,
                   size: 22,
                 ),
@@ -1245,7 +1231,7 @@ class _BackupSetupCard extends StatelessWidget {
                     value: selectedProfile?.id,
                     isExpanded: true,
                     isDense: true,
-                    borderRadius: BorderRadius.circular(14),
+                    borderRadius: BorderRadius.circular(LocalShareRadii.medium),
                     hint: Text(LocalShareCopy.backupTarget),
                     items: profiles
                         .map(
@@ -1271,11 +1257,12 @@ class _BackupSetupCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 4),
-              IconButton(
-                visualDensity: VisualDensity.compact,
-                tooltip: LocalShareCopy.addBackupTarget,
-                onPressed: enabled ? onAdd : null,
-                icon: const Icon(Icons.add_rounded),
+              Tooltip(
+                message: LocalShareCopy.addBackupTarget,
+                child: IconButton(
+                  onPressed: enabled ? onAdd : null,
+                  icon: const Icon(Icons.add_rounded),
+                ),
               ),
             ],
           ),
@@ -1310,10 +1297,7 @@ class _BackupSetupCard extends StatelessWidget {
           if (scanning) ...[
             Text(
               LocalShareCopy.scanningItems(scannedItemCount),
-              style: Theme.of(context)
-                  .textTheme
-                  .bodySmall
-                  ?.copyWith(color: scheme.onSurfaceVariant),
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
             ),
             const SizedBox(height: 7),
             const LinearProgressIndicator(),
@@ -1370,6 +1354,207 @@ class _ConfirmationDetailRow extends StatelessWidget {
   }
 }
 
+class _ConfirmPendingDialog extends StatefulWidget {
+  const _ConfirmPendingDialog({
+    required this.manifest,
+    required this.profile,
+  });
+
+  final BackupManifest manifest;
+  final BackupTargetProfile profile;
+
+  @override
+  State<_ConfirmPendingDialog> createState() => _ConfirmPendingDialogState();
+}
+
+class _ConfirmPendingDialogState extends State<_ConfirmPendingDialog> {
+  late final Set<String> _selectedKeys = {
+    for (final item in widget.manifest.items) item.snapshotItem.mediaKey,
+  };
+
+  bool get _allSelected => _selectedKeys.length == widget.manifest.itemCount;
+
+  int get _selectedBytes {
+    var total = 0;
+    for (final item in widget.manifest.items) {
+      if (_selectedKeys.contains(item.snapshotItem.mediaKey)) {
+        total += item.snapshotItem.sizeBytes;
+      }
+    }
+    return total;
+  }
+
+  void _toggle(String mediaKey, bool selected) {
+    setState(() {
+      if (selected) {
+        _selectedKeys.add(mediaKey);
+      } else {
+        _selectedKeys.remove(mediaKey);
+      }
+    });
+  }
+
+  void _toggleAll(bool selected) {
+    setState(() {
+      if (selected) {
+        _selectedKeys.addAll(
+          widget.manifest.items.map((item) => item.snapshotItem.mediaKey),
+        );
+      } else {
+        _selectedKeys.clear();
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final manifest = widget.manifest;
+    return AlertDialog(
+      scrollable: true,
+      icon: const Icon(Icons.verified_rounded),
+      title: Text(LocalShareCopy.confirmSavedTitle),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(LocalShareCopy.confirmSavedMessage),
+          const SizedBox(height: 14),
+          Container(
+            padding: const EdgeInsets.all(LocalShareSpacing.sm),
+            decoration: BoxDecoration(
+              color: scheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(LocalShareRadii.medium),
+            ),
+            child: Column(
+              children: [
+                _ConfirmationDetailRow(
+                  key: const Key('backup-confirm-target'),
+                  label: LocalShareCopy.confirmationTargetComputer,
+                  value: widget.profile.displayName,
+                ),
+                const SizedBox(height: 9),
+                _ConfirmationDetailRow(
+                  key: const Key('backup-confirm-count'),
+                  label: LocalShareCopy.confirmationItemCount,
+                  value: LocalShareCopy.itemCount(manifest.itemCount),
+                ),
+                const SizedBox(height: 9),
+                _ConfirmationDetailRow(
+                  key: const Key('backup-confirm-size'),
+                  label: LocalShareCopy.confirmationTotalSize,
+                  value: manifest.totalBytes.asReadableFileSize,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Checkbox(
+                key: const Key('backup-confirm-select-all'),
+                value: _allSelected,
+                onChanged: (value) => _toggleAll(value ?? false),
+              ),
+              const SizedBox(width: 4),
+              Expanded(
+                child: Text(
+                  LocalShareCopy.confirmationSelectAll,
+                  style: Theme.of(context).textTheme.labelLarge,
+                ),
+              ),
+              Text(
+                '${LocalShareCopy.itemCount(_selectedKeys.length)} · '
+                '${_selectedBytes.asReadableFileSize}',
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(context).size.height * 0.42,
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                children: [
+                  for (final item in manifest.items)
+                    _ConfirmPendingItemTile(
+                      key: Key('backup-confirm-item-${item.snapshotItem.mediaKey}'),
+                      snapshot: item.snapshotItem,
+                      selected: _selectedKeys.contains(item.snapshotItem.mediaKey),
+                      onChanged: (value) => _toggle(item.snapshotItem.mediaKey, value),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text(LocalShareCopy.cancel),
+        ),
+        FilledButton.icon(
+          key: const Key('backup-confirm-selected'),
+          onPressed: _selectedKeys.isEmpty ? null : () => Navigator.of(context).pop(Set<String>.of(_selectedKeys)),
+          icon: const Icon(Icons.check_rounded),
+          label: Text(LocalShareCopy.confirmSelected(_selectedKeys.length)),
+        ),
+      ],
+    );
+  }
+}
+
+class _ConfirmPendingItemTile extends StatelessWidget {
+  const _ConfirmPendingItemTile({
+    required this.snapshot,
+    required this.selected,
+    required this.onChanged,
+    super.key,
+  });
+
+  final MediaSnapshotItem snapshot;
+  final bool selected;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final mime = snapshot.mimeType;
+    final icon = mime.startsWith('video/')
+        ? Icons.movie_rounded
+        : mime.startsWith('image/')
+            ? Icons.image_rounded
+            : Icons.insert_drive_file_rounded;
+    return CheckboxListTile(
+      value: selected,
+      onChanged: (value) => onChanged(value ?? false),
+      controlAffinity: ListTileControlAffinity.leading,
+      dense: true,
+      contentPadding: EdgeInsets.zero,
+      secondary: Icon(icon, color: scheme.primary),
+      title: Text(
+        snapshot.displayName,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: Theme.of(context).textTheme.bodyMedium,
+      ),
+      subtitle: Text(
+        '${snapshot.relativePath} · ${snapshot.sizeBytes.asReadableFileSize}',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: scheme.onSurfaceVariant,
+            ),
+      ),
+    );
+  }
+}
+
 class _PendingConfirmationCard extends StatelessWidget {
   const _PendingConfirmationCard({
     required this.manifest,
@@ -1389,11 +1574,11 @@ class _PendingConfirmationCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Container(
-      padding: const EdgeInsets.all(15),
+      padding: const EdgeInsets.all(LocalShareSpacing.md),
       decoration: BoxDecoration(
-        color: scheme.tertiaryContainer.withOpacity(0.5),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: scheme.tertiary.withOpacity(0.25)),
+        color: scheme.primaryContainer.withOpacity(0.42),
+        borderRadius: BorderRadius.circular(LocalShareRadii.large),
+        border: Border.all(color: scheme.primary.withOpacity(0.2)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1402,10 +1587,8 @@ class _PendingConfirmationCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Icon(
-                allowManualConfirmation
-                    ? Icons.info_outline_rounded
-                    : Icons.cloud_done_outlined,
-                color: scheme.tertiary,
+                allowManualConfirmation ? Icons.info_outline_rounded : Icons.cloud_done_rounded,
+                color: scheme.primary,
                 size: 21,
               ),
               const SizedBox(width: 10),
@@ -1414,13 +1597,8 @@ class _PendingConfirmationCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      allowManualConfirmation
-                          ? LocalShareCopy.pendingConfirmation
-                          : LocalShareCopy.pendingComputerReceipt,
-                      style: Theme.of(context)
-                          .textTheme
-                          .titleSmall
-                          ?.copyWith(fontWeight: FontWeight.w700),
+                      allowManualConfirmation ? LocalShareCopy.pendingConfirmation : LocalShareCopy.pendingComputerReceipt,
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
                     ),
                     const SizedBox(height: 3),
                     Text(
@@ -1467,6 +1645,54 @@ class _PendingConfirmationCard extends StatelessWidget {
   }
 }
 
+class _BackupDestinationCard extends StatelessWidget {
+  const _BackupDestinationCard({required this.destination});
+
+  final String? destination;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return _SurfaceCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.folder_copy_rounded, color: scheme.primary, size: 21),
+              const SizedBox(width: 10),
+              Text(
+                LocalShareCopy.backupDestination,
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          FutureBuilder<String>(
+            future: destination == null ? Future<String>.delayed(Duration.zero, getDefaultBackupDestinationDirectory) : null,
+            builder: (context, snapshot) {
+              final path = destination ?? (snapshot.hasData ? snapshot.data! : '…');
+              return SelectableText(
+                path,
+                maxLines: 3,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600, height: 1.4),
+              );
+            },
+          ),
+          const SizedBox(height: 8),
+          Text(
+            LocalShareCopy.startOnAndroid,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                  height: 1.4,
+                ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _BackupPlanCard extends StatelessWidget {
   const _BackupPlanCard({
     super.key,
@@ -1488,12 +1714,9 @@ class _BackupPlanCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final devices = nearbyState.devices.values
-        .where(_isBackupTargetDevice)
-        .toList(growable: false)
+    final devices = nearbyState.devices.values.where(_isBackupTargetDevice).toList(growable: false)
       ..sort((left, right) => left.alias.compareTo(right.alias));
-    final scanningDevices =
-        nearbyState.runningFavoriteScan || nearbyState.runningIps.isNotEmpty;
+    final scanningDevices = nearbyState.runningFavoriteScan || nearbyState.runningIps.isNotEmpty;
     return _SurfaceCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1502,19 +1725,13 @@ class _BackupPlanCard extends StatelessWidget {
             builder: (context, constraints) {
               final title = Text(
                 LocalShareCopy.backupReady,
-                style: Theme.of(context)
-                    .textTheme
-                    .titleMedium
-                    ?.copyWith(fontWeight: FontWeight.w700),
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
               );
               final summary = Text(
                 '${LocalShareCopy.itemCount(plan.plannedItemCount)} · ${plan.totalBytes.asReadableFileSize}',
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
-                style: Theme.of(context)
-                    .textTheme
-                    .labelLarge
-                    ?.copyWith(color: scheme.primary),
+                style: Theme.of(context).textTheme.labelLarge?.copyWith(color: scheme.primary),
               );
               if (constraints.maxWidth < 400) {
                 return Column(
@@ -1542,17 +1759,12 @@ class _BackupPlanCard extends StatelessWidget {
               Expanded(
                 child: Text(
                   LocalShareCopy.nearbyComputers,
-                  style: Theme.of(context)
-                      .textTheme
-                      .titleSmall
-                      ?.copyWith(fontWeight: FontWeight.w700),
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
                 ),
               ),
               IconButton(
                 tooltip: LocalShareCopy.refreshNearbyDevices,
-                onPressed: busy || scanningDevices
-                    ? null
-                    : () async => onRefreshDevices(),
+                onPressed: busy || scanningDevices ? null : () async => onRefreshDevices(),
                 icon: scanningDevices
                     ? const SizedBox.square(
                         dimension: 19,
@@ -1566,25 +1778,51 @@ class _BackupPlanCard extends StatelessWidget {
             Container(
               padding: const EdgeInsets.fromLTRB(12, 9, 8, 9),
               decoration: BoxDecoration(
-                color: scheme.surfaceContainerHighest.withOpacity(0.5),
-                borderRadius: BorderRadius.circular(13),
+                color: scheme.surfaceContainerHighest.withOpacity(0.55),
+                borderRadius: BorderRadius.circular(LocalShareRadii.medium),
               ),
-              child: Row(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(
-                    Icons.radar_rounded,
-                    size: 21,
-                    color: scheme.onSurfaceVariant,
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.radar_rounded,
+                        size: 21,
+                        color: scheme.onSurfaceVariant,
+                      ),
+                      const SizedBox(width: 9),
+                      Expanded(
+                        child: Text(
+                          scanningDevices ? LocalShareCopy.findingNearbyDevices : LocalShareCopy.noNearbyComputers,
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 9),
-                  Expanded(
-                    child: Text(
-                      scanningDevices
-                          ? LocalShareCopy.findingNearbyDevices
-                          : LocalShareCopy.noNearbyComputers,
-                      style: Theme.of(context).textTheme.bodySmall,
+                  if (!scanningDevices) ...[
+                    const SizedBox(height: 4),
+                    TextButton.icon(
+                      key: const Key('backup-manual-connect'),
+                      onPressed: busy
+                          ? null
+                          : () async {
+                              final device = await showDialog<Device>(
+                                context: context,
+                                builder: (_) => const AddressInputDialog(),
+                              );
+                              if (device != null && context.mounted) {
+                                await onDevice(device);
+                              }
+                            },
+                      icon: const Icon(Icons.edit_location_alt_rounded, size: 18),
+                      label: Text(LocalShareCopy.manualConnection),
+                      style: TextButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      ),
                     ),
-                  ),
+                  ],
                 ],
               ),
             )
@@ -1602,7 +1840,7 @@ class _BackupPlanCard extends StatelessWidget {
           Divider(height: 18, color: scheme.outlineVariant),
           InkWell(
             key: const Key('backup-web-send'),
-            borderRadius: BorderRadius.circular(13),
+            borderRadius: BorderRadius.circular(LocalShareRadii.medium),
             onTap: busy ? null : () async => onWeb(),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 7),
@@ -1613,10 +1851,7 @@ class _BackupPlanCard extends StatelessWidget {
                   Expanded(
                     child: Text(
                       LocalShareCopy.backupViaLink,
-                      style: Theme.of(context)
-                          .textTheme
-                          .titleSmall
-                          ?.copyWith(fontWeight: FontWeight.w700),
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
                     ),
                   ),
                   const Icon(Icons.chevron_right_rounded),
@@ -1645,8 +1880,8 @@ class _BackupDeviceTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Material(
-      color: scheme.surfaceContainerHighest.withOpacity(0.48),
-      borderRadius: BorderRadius.circular(13),
+      color: scheme.surfaceContainerHighest.withOpacity(0.55),
+      borderRadius: BorderRadius.circular(LocalShareRadii.medium),
       clipBehavior: Clip.antiAlias,
       child: ListTile(
         dense: true,
@@ -1660,8 +1895,7 @@ class _BackupDeviceTile extends StatelessWidget {
         ),
         subtitle: Text(
           [
-            if (device.deviceModel?.trim().isNotEmpty ?? false)
-              device.deviceModel!.trim(),
+            if (device.deviceModel?.trim().isNotEmpty ?? false) device.deviceModel!.trim(),
             device.ip,
           ].join(' · '),
           maxLines: 1,
@@ -1703,19 +1937,12 @@ class _AllBackedUpCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  plan.currentItemCount == 0
-                      ? LocalShareCopy.noVisibleMedia
-                      : LocalShareCopy.everythingBackedUp,
-                  style: Theme.of(context)
-                      .textTheme
-                      .titleMedium
-                      ?.copyWith(fontWeight: FontWeight.w700),
+                  plan.currentItemCount == 0 ? LocalShareCopy.noVisibleMedia : LocalShareCopy.everythingBackedUp,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
                 ),
                 const SizedBox(height: 5),
                 Text(
-                  plan.currentItemCount == 0
-                      ? LocalShareCopy.noVisibleMediaDescription
-                      : LocalShareCopy.everythingBackedUpDescription,
+                  plan.currentItemCount == 0 ? LocalShareCopy.noVisibleMediaDescription : LocalShareCopy.everythingBackedUpDescription,
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                         color: scheme.onSurfaceVariant,
                       ),
@@ -1734,36 +1961,46 @@ class _InlineNotice extends StatelessWidget {
     required this.icon,
     required this.text,
     this.isError = false,
+    this.busy = false,
   });
 
   final IconData icon;
   final String text;
   final bool isError;
+  final bool busy;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final foreground = isError ? scheme.error : scheme.onSecondaryContainer;
-    final background =
-        isError ? scheme.errorContainer : scheme.secondaryContainer;
+    final background = isError ? scheme.errorContainer : scheme.secondaryContainer;
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: background.withOpacity(0.78),
-        borderRadius: BorderRadius.circular(16),
+        color: background.withOpacity(0.85),
+        borderRadius: BorderRadius.circular(LocalShareRadii.large),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, color: foreground, size: 21),
+          if (busy)
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: SizedBox.square(
+                dimension: 18,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2.2,
+                  color: foreground,
+                ),
+              ),
+            )
+          else
+            Icon(icon, color: foreground, size: 21),
           const SizedBox(width: 10),
           Expanded(
             child: SelectableText(
               text,
-              style: Theme.of(context)
-                  .textTheme
-                  .bodyMedium
-                  ?.copyWith(color: foreground),
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: foreground),
             ),
           ),
         ],
@@ -1779,14 +2016,8 @@ class _SurfaceCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Container(
+    return LocalShareCard(
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: scheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: scheme.outlineVariant.withOpacity(0.58)),
-      ),
       child: child,
     );
   }
@@ -1844,8 +2075,7 @@ bool _manifestMatchesPlan(BackupManifest manifest, BackupPlan plan) {
     return false;
   }
   final plannedByKey = {
-    for (final item in plan.items)
-      item.snapshotItem.mediaKey: item.snapshotItem,
+    for (final item in plan.items) item.snapshotItem.mediaKey: item.snapshotItem,
   };
   return manifest.items.every((item) {
     final snapshot = item.snapshotItem;

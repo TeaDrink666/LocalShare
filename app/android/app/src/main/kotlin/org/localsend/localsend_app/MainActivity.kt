@@ -45,6 +45,14 @@ class MainActivity : FlutterActivity() {
                 }
 
                 "createDirectory" -> handleCreateDirectory(call, result)
+                "deleteTaskDocument" -> {
+                    try {
+                        DocumentsContract.deleteDocument(contentResolver, Uri.parse(call.argument<String>("uri")!!))
+                        result.success(null)
+                    } catch (error: Exception) {
+                        result.error("TASK_DOCUMENT_DELETE_FAILED", error.message, null)
+                    }
+                }
 
                 "openContentUri" -> {
                     openUri(context, call.argument<String>("uri")!!)
@@ -57,6 +65,16 @@ class MainActivity : FlutterActivity() {
                 }
 
                 "scanBackupMedia" -> scanBackupMedia(call, result)
+
+                "startTransferService" -> {
+                    TransferForegroundService.start(applicationContext)
+                    result.success(null)
+                }
+
+                "stopTransferService" -> {
+                    TransferForegroundService.stop(applicationContext)
+                    result.success(null)
+                }
 
                 else -> result.notImplemented()
             }

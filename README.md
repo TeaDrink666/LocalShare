@@ -1,90 +1,103 @@
 # LocalShare
 
-LocalShare 是一个面向 Windows 和 Android 的局域网文件互传与手机媒体备份工具。
+[English](README.md) | [简体中文](readme_i18n/README_ZH.md)
 
-项目基于 LocalSend 的局域网传输能力重新设计，重点解决日常文件互传、浏览器传输和手机照片视频手动备份三个场景。
+LocalShare is a local network file transfer and phone media backup tool for Windows and Android.
 
-## 功能
+The project builds on LocalSend's local network transfer capabilities and focuses on everyday file transfers, browser transfers, and manual backups of phone photos and videos.
 
-- Android 与 Windows 客户端之间通过局域网发送和接收文件。
-- 通过链接或二维码，让浏览器发送文件或接收文件，浏览器端不需要安装客户端。
-- Android 手动扫描全部图片和视频，并增量备份到指定 Windows 电脑。
-- 普通文件接收目录与手机备份目录分别设置，互不混用。
-- 手机备份不保留原始相册目录层级，统一保存到备份目录下的“图片”和“视频”文件夹。
-- Windows 端使用临时文件、大小校验、SHA-256 校验、原子改名和 SQLite 回执记录。
-- 手机只根据 Windows 返回的已核验回执更新备份状态，不需要手动确认“备份成功”。
-- 用户将已备份文件从 Windows 收件目录移动到自己的归档目录后，不会因此被重复备份。
+## Downloads
 
-## 备份语义
+Download the Windows installer, portable package, and Android APKs from [LocalShare GitHub Releases](https://github.com/TeaDrink666/LocalShare/releases/latest).
 
-备份是手动触发的增量任务，不包含定时任务、后台自动备份、云中继或互联网传输。
+## Features
 
-Windows 收件目录是“备份收件箱”，不是由应用长期管理的媒体库。完成核验并写入回执后，文件可以由用户自行移动。网页备份仍需要人工确认，因为浏览器无法向 Windows 客户端证明文件最终写入了哪个目录。
+- Send and receive files between Android and Windows over the local network.
+- Manage transfers as tasks with progress, speed and time estimates; changing pages keeps tasks running.
+- Run two transfers at once by default (configurable from 1 to 8), with additional tasks queued and media sync limited to one.
+- Pause and resume native LocalShare transfers, keep task history, and preserve original names and folder structures in separate receive folders.
+- Send or receive files in a browser through a link or QR code, without installing a client in the browser.
+- Manually scan Android photos and videos and incrementally back them up to a selected Windows computer.
+- Configure separate destinations for ordinary file transfers and phone backups.
+- Store backed-up photos and videos in separate folders without preserving the original album directory structure.
+- Verify received backups on Windows using temporary files, file sizes, SHA-256, atomic renaming, and SQLite receipt records.
+- Update the phone's backup state only after Windows returns a verified receipt, without manually confirming that the backup succeeded.
+- Avoid backing up the same files again when the user moves verified files from the Windows inbox to an archive.
 
-详细架构和协议说明见 [`docs/LOCALSHARE_ARCHITECTURE.md`](docs/LOCALSHARE_ARCHITECTURE.md)。
+## Backup behavior
 
-## 本地构建
+Backups are manual incremental tasks. They do not include scheduled jobs, automatic background backups, cloud relays, or internet transfers.
 
-推荐环境：
+The Windows backup destination is an inbox rather than a media library managed by the application. After a file is verified and its receipt is recorded, the user can move it elsewhere. Browser backups still require manual confirmation because a browser cannot prove where the Windows client ultimately saved the file.
+
+See [docs/LOCALSHARE_ARCHITECTURE.md](docs/LOCALSHARE_ARCHITECTURE.md) for the architecture and protocol details.
+See [docs/TASK_CENTER.md](docs/TASK_CENTER.md) for task scheduling, resume compatibility and current background limitations.
+
+## Upgrading to 0.2.1
+
+The official Android APK uses the project's fixed release signing identity. It can update the locally signed 0.2.0 build directly. GitHub releases 0.1.0 and 0.1.1 used a different Android signature: back up application settings and records before uninstalling the old app and installing 0.2.1. Later releases using the same identity can update in place.
+
+Windows uses a self-signed code-signing certificate, so Windows may still show an untrusted publisher or SmartScreen message. The installer retains the same application identity for upgrades.
+
+Release notes are in [CHANGELOG.md](CHANGELOG.md).
+
+## Local builds
+
+The project's build environment uses:
 
 - Flutter 3.24.5
 - Dart 3.5.x
 - JDK 17
-- Android SDK 34、NDK 23.1.7779620
-- Rust stable（`rhttp` 原生依赖使用）
+- Android SDK 34 and NDK 23.1.7779620
+- Rust stable for the native `rhttp` dependency
 
-首次准备依赖：
+Get dependencies from the `app` directory:
 
 ```powershell
 cd app
 flutter pub get
 ```
 
-Android Release 分架构 APK：
+Build the Android ARM64 Release APK:
 
 ```powershell
-flutter build apk --release --split-per-abi --target-platform android-arm64,android-x64
+flutter build apk --release --target-platform android-arm64
 ```
 
-只生成现代 Android 常用架构：
+Official Android packages support `arm64-v8a` only.
 
-- `arm64-v8a`
-- `x86_64`
+If `android/key.properties` is absent, the build uses a development keystore to sign the Release APKs for testing. Configure your own keystore and `android/key.properties` for a fixed release signing identity. Signing keys and passwords must stay outside Git commits.
 
-仓库没有提交正式发布密钥时，构建会使用开发 keystore 生成可供测试安装的 Release 包；正式发布或上架应用商店前，需要配置自己的 `android/key.properties` 和 keystore。
-
-Windows Release：
+Build Windows Release:
 
 ```powershell
 flutter build windows --release
 ```
 
-Windows Inno Setup 安装程序：
+To create a Windows installer, build Windows Release first, then compile [scripts/compile_localshare_setup.iss](scripts/compile_localshare_setup.iss) with Inno Setup.
 
-1. 先生成 Windows Release。
-2. 使用 Inno Setup 编译 [`scripts/compile_localshare_setup.iss`](scripts/compile_localshare_setup.iss)。
-
-Windows 插件如果无法创建符号链接，请在管理员 PowerShell 中运行 [`scripts/compile_windows_debug_localshare.ps1`](scripts/compile_windows_debug_localshare.ps1) 进行依赖准备。
+If Windows cannot create plugin symbolic links, run [scripts/compile_windows_debug_localshare.ps1](scripts/compile_windows_debug_localshare.ps1) in an administrator PowerShell to prepare the dependencies.
 
 ## GitHub Actions
 
-推送到 `main` 分支或手动运行 `LocalShare Build` 工作流后，GitHub Actions 会构建：
+Pushing to `main` or manually starting the `LocalShare Build` workflow builds:
 
 - Android `arm64-v8a` Release APK
-- Android `x86_64` Release APK
-- Windows x64 Release 便携包
+- Windows x64 Release portable package
+- Windows x64 Inno Setup installer
 
-构建结果可以在对应 Actions 运行的 Artifacts 中下载。项目不把本地构建缓存、工具链或 `dist` 安装包提交到 Git 仓库。
+Download the packages from the workflow run's Artifacts. Local build caches, toolchains, signing files, and `dist` packages are excluded from Git.
+These CI artifacts use development signing unless private signing configuration is supplied. Use the signed packages attached to GitHub Releases for official upgrades.
 
-## 测试
+## Tests
 
-在 `app` 目录运行：
+Run these commands from the `app` directory:
 
 ```powershell
 flutter analyze
 flutter test
 ```
 
-## 许可证
+## License
 
-本项目遵循仓库中的 [LICENSE](LICENSE) 文件。项目基于 LocalSend 开源项目发展，相关原始版权和许可证信息保持在仓库历史与源文件中。
+This project follows the [LICENSE](LICENSE). It is derived from the open source LocalSend project. The original copyright and license information is retained in the repository history and source files.
