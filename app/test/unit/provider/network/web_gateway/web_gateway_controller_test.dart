@@ -242,7 +242,7 @@ void main() {
       expect(uriContent.streamRequests, 1);
     });
 
-    test('rejects unrepresentable archive names without silently renaming', () async {
+    test('preserves archive names or rejects names unrepresentable on the host', () async {
       final harness = await _DownloadHarness.startFiles({
         'reserved': _webFile(
           id: 'reserved',
@@ -263,8 +263,23 @@ void main() {
       addTearDown(harness.close);
 
       final response = await harness.downloadAll();
-      expect(response.statusCode, 422);
-      await _readBody(response);
+      final body = await _readBody(response);
+      if (Platform.isWindows) {
+        expect(response.statusCode, 422);
+      } else {
+        expect(response.statusCode, HttpStatus.ok);
+        final archive = ZipDecoder().decodeBytes(body, verify: true);
+        expect(archive.files.map((file) => file.name), [
+          'CON/Album<2026>/NUL.txt/photo. ',
+          'Camera/a?.jpg',
+          'camera/A*.jpg',
+        ]);
+        expect(archive.files.map((file) => file.content), [
+          [1],
+          [2],
+          [3],
+        ]);
+      }
     });
 
     test('requires an active session belonging to the request IP', () async {
